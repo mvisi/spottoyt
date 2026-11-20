@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { helper } from "./helper";
 import { PENDING_PLAYLIST_EVENT, takePendingPlaylist } from "./pending";
+import { SettingsPage } from "./SettingsPage";
+import { summarize, useConnection } from "./status";
 
 type Tab = "convert" | "library" | "settings";
 const tabs: Array<[Tab, string]> = [
@@ -12,7 +13,8 @@ const tabs: Array<[Tab, string]> = [
 export function App() {
   const [tab, setTab] = useState<Tab>("convert");
   const [playlistUri, setPlaylistUri] = useState<string | null>(null);
-  const helperOnline = useHelperStatus();
+  const connection = useConnection();
+  const summary = summarize(connection);
 
   useEffect(() => {
     const take = () => {
@@ -42,49 +44,29 @@ export function App() {
           </button>
         ))}
         <span className="syt-spacer" />
-        <span
-          className={`syt-status${helperOnline === null ? "" : helperOnline ? " ok" : " bad"}`}
+        <button
+          type="button"
+          className={`syt-dot ${summary.tone}`}
+          title="Connection details"
+          onClick={() => setTab("settings")}
         >
           <i />
-          {helperOnline === null
-            ? "Checking helper…"
-            : helperOnline
-              ? "Helper connected"
-              : "Helper not running"}
-        </span>
+          {summary.label}
+        </button>
       </nav>
       <main className="syt-pad">
         {tab === "convert" && (
-          <p className="syt-sub">
+          <p className="syt-muted">
             {playlistUri
               ? `Selected ${playlistUri}`
               : "Pick a playlist to convert."}
           </p>
         )}
         {tab === "library" && (
-          <p className="syt-sub">Linked playlists go here.</p>
+          <p className="syt-muted">Linked playlists go here.</p>
         )}
-        {tab === "settings" && <p className="syt-sub">Settings go here.</p>}
+        {tab === "settings" && <SettingsPage connection={connection} />}
       </main>
     </div>
   );
-}
-
-function useHelperStatus() {
-  const [online, setOnline] = useState<boolean | null>(null);
-  useEffect(() => {
-    let alive = true;
-    const check = () =>
-      helper.health().then(
-        () => alive && setOnline(true),
-        () => alive && setOnline(false),
-      );
-    check();
-    const timer = setInterval(check, 5000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-  return online;
 }

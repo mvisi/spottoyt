@@ -10,5 +10,6 @@ The project is early. Propose simplifications or rewrites when they make the cod
 
 - The Spotify app uses Spotify's own React 18 (`Spicetify.React`), not a bundled copy. `scripts/build.ts` redirects `react` imports to it, so only use React 18 APIs.
 - Spicetify relies on Spotify internals that can change on update. Keep Spicetify calls in a few small modules and add types to `src/spicetify.d.ts` as needed.
-- YouTube Music credentials and calls stay in the helper. The Spotify app only talks to the helper.
+- YouTube Music credentials and calls stay in the helper, and only `apps/helper/src/youtube.ts` imports youtubei.js. Patch library bugs there (its playlist delete is broken in 18.3.0, so call `/playlist/delete` directly). The Spotify app only talks to the helper.
+- YouTube Music hides songs from IPs in unsupported regions. The user's machine is in one, so live YouTube tests need `HTTPS_PROXY=http://127.0.0.1:25345` with wireproxy running (see README).
 - Use `bun test` for tests. Run `bun run typecheck` while working and `bun run lint` before finishing.

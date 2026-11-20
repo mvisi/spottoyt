@@ -5,6 +5,7 @@
   --syt-card: var(--spice-card, #1f1f1f);
   --syt-hl: var(--spice-highlight, #2a2a2a);
   --syt-accent: var(--spice-button, #1ed760);
+  --syt-warn: #f5a524;
   --syt-bad: #f15e6c;
   color: var(--syt-text);
   font-size: 14px;
@@ -46,29 +47,94 @@
 .syt-spacer {
   flex: 1;
 }
-.syt-status {
+.syt-dot {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   color: var(--syt-sub);
 }
-.syt-status i {
+.syt-dot i {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--syt-sub);
+  flex: none;
 }
-.syt-status.ok i {
+.syt-dot.ok i {
   background: var(--syt-accent);
 }
-.syt-status.bad i {
+.syt-dot.warn i {
+  background: var(--syt-warn);
+}
+.syt-dot.bad i {
   background: var(--syt-bad);
+}
+button.syt-dot:hover {
+  color: var(--syt-text);
 }
 
 .syt-pad {
   padding: 8px 32px 32px;
 }
-.syt-sub {
+.syt-muted {
   color: var(--syt-sub);
+}
+.syt-strong {
+  font-weight: 700;
+}
+.syt-error {
+  color: var(--syt-bad);
+  font-size: 13px;
+}
+.syt-h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 8px 0 12px;
+}
+.syt-section {
+  max-width: 640px;
+}
+.syt-panel {
+  background: var(--syt-card);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.syt-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+}
+.syt-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.syt .syt-ghost {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 16px;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--syt-sub);
+}
+.syt .syt-ghost:hover:not(:disabled) {
+  border-color: var(--syt-text);
+  color: var(--syt-text);
+}
+.syt button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.syt-code {
+  background: var(--syt-hl);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font:
+    12px ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  margin: 8px 0 0;
 }
