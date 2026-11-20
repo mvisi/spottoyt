@@ -28,6 +28,8 @@ export type SearchOptions = {
 export type YoutubeClient = {
   status(options?: { refresh?: boolean }): Promise<YoutubeStatus>;
   search(options: SearchOptions): Promise<YoutubeTrack[]>;
+  /** Looks up one video, e.g. from a pasted link. Null if it doesn't exist. */
+  video(videoId: string): Promise<YoutubeTrack | null>;
 };
 
 // A query that always has song results where YouTube Music is available.
@@ -122,8 +124,20 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
     return status;
   };
 
+  const video = async (videoId: string) => {
+    const yt = await innertube();
+    try {
+      const info = await yt.music.getInfo(videoId);
+      return toYoutubeTrackFromInfo(videoId, info.basic_info);
+    } catch (error) {
+      if (/unavailable|not found/i.test(message(error))) return null;
+      throw error;
+    }
+  };
+
   return {
     search,
+    video,
     async status({ refresh = false } = {}) {
       if (
         !refresh &&
@@ -173,6 +187,39 @@ export function toYoutubeTrack(item: SearchItem): YoutubeTrack | null {
       ? item.duration.seconds * 1000
       : undefined,
     kind,
+    thumbnailUrl: thumbnail?.url,
+  };
+}
+
+type VideoInfo = {
+  title?: string;
+  author?: string;
+  duration?: number;
+  short_description?: string;
+  thumbnail?: { url: string; width: number }[];
+};
+
+export function toYoutubeTrackFromInfo(
+  videoId: string,
+  info: VideoInfo,
+): YoutubeTrack | null {
+  if (!info.title) return null;
+  // Auto-generated song uploads describe themselves like:
+  //   Provided to YouTube by <label>\n\n<Title> · <Artist>\n\n<Album>\n\n℗ ...
+  const description = info.short_description ?? "";
+  const isSong = description.startsWith("Provided to YouTube by");
+  const paragraphs = description.split(/\n\s*\n/);
+  const thumbnail = [...(info.thumbnail ?? [])].sort(
+    (a, b) => b.width - a.width,
+  )[0];
+
+  return {
+    videoId,
+    title: info.title,
+    artists: info.author ? [info.author.replace(/ - Topic$/, "")] : [],
+    album: isSong ? paragraphs[2]?.trim() || undefined : undefined,
+    durationMs: info.duration ? info.duration * 1000 : undefined,
+    kind: isSong ? "song" : "video",
     thumbnailUrl: thumbnail?.url,
   };
 }

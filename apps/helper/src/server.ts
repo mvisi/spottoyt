@@ -10,6 +10,7 @@ import type {
 } from "@spottoyt/shared";
 import { z } from "zod";
 import type { MatchJobs } from "./matching/jobs";
+import { languageForText } from "./matching/language";
 import type { MatchStore } from "./matching/store";
 import { type SettingsStore, settingsPatchSchema } from "./settings";
 import type { YoutubeClient } from "./youtube";
@@ -147,9 +148,18 @@ export function createHandler(deps: Deps) {
         query: query.q,
         kind: query.kind,
         limit: query.limit,
-        lang: query.lang,
+        lang: query.lang ?? languageForText(query.q),
       });
       return json<SearchResponse>({ results });
+    }),
+
+    route("GET", "/youtube/videos/:id", async (_req, _url, { id = "" }) => {
+      if (!/^[\w-]{11}$/.test(id)) {
+        throw new HttpError(400, "Not a YouTube video ID");
+      }
+      const track = await deps.youtube.video(id);
+      if (!track) throw new HttpError(404, "That video doesn't exist");
+      return json<YoutubeTrack>(track);
     }),
 
     route("GET", "/settings", () => json<Settings>(deps.settings.get())),

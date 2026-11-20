@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { toYoutubeTrack } from "./youtube";
+import { toYoutubeTrack, toYoutubeTrackFromInfo } from "./youtube";
 
 describe("toYoutubeTrack", () => {
   test("normalizes a song result", () => {
@@ -43,5 +43,34 @@ describe("toYoutubeTrack", () => {
       null,
     );
     expect(toYoutubeTrack({ title: "y", item_type: "song" })).toBe(null);
+  });
+});
+
+describe("toYoutubeTrackFromInfo", () => {
+  test("recognizes an auto-generated song upload and reads its album", () => {
+    expect(
+      toYoutubeTrackFromInfo("kIO2OHa9HDQ", {
+        title: "Nightcall",
+        author: "Kavinsky - Topic",
+        duration: 257,
+        short_description:
+          "Provided to YouTube by Record Makers\n\nNightcall · Kavinsky\n\nOutRun\n\n℗ 2013 Record Makers",
+      }),
+    ).toMatchObject({
+      kind: "song",
+      artists: ["Kavinsky"],
+      album: "OutRun",
+      durationMs: 257_000,
+    });
+  });
+
+  test("treats anything else as a video", () => {
+    expect(
+      toYoutubeTrackFromInfo("MV_3Dpw-BRY", {
+        title: "Kavinsky - Nightcall (Official Video)",
+        author: "Kavinsky",
+        short_description: "Official video",
+      }),
+    ).toMatchObject({ kind: "video", album: undefined });
   });
 });

@@ -37,5 +37,41 @@ declare namespace Spicetify {
 
   namespace Platform {
     const History: { push(path: string): void };
+
+    type Image = { url: string; width?: number | null };
+
+    type RootlistItem =
+      | {
+          type: "playlist";
+          uri: string;
+          name: string;
+          images?: Image[];
+          owner?: { name?: string; displayName?: string };
+          totalLength?: number;
+        }
+      | { type: "folder"; name: string; items?: RootlistItem[] }
+      | { type: string; [key: string]: unknown };
+
+    const RootlistAPI: {
+      getContents(): Promise<{ items?: RootlistItem[] }>;
+    };
+
+    type PlaylistItem = {
+      uri?: string;
+      name?: string;
+      type?: string;
+      isLocal?: boolean;
+      artists?: Array<{ name?: string }>;
+      album?: { name?: string; images?: Image[] };
+      duration?: { milliseconds?: number };
+    };
+
+    const PlaylistAPI: {
+      getMetadata(uri: string): Promise<{ name?: string; images?: Image[] }>;
+      getContents(
+        uri: string,
+        options?: { limit?: number; offset?: number },
+      ): Promise<{ items?: PlaylistItem[]; totalLength?: number }>;
+    };
   }
 }

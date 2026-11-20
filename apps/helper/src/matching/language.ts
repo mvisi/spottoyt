@@ -20,7 +20,10 @@ const SCRIPTS: Array<[RegExp, string]> = [
 export const DEFAULT_LANGUAGE = "en";
 
 export function searchLanguage(track: SpotifyTrack): string {
-  const text = `${track.title} ${track.artists.join(" ")}`;
+  return languageForText(`${track.title} ${track.artists.join(" ")}`);
+}
+
+export function languageForText(text: string): string {
   return (
     SCRIPTS.find(([pattern]) => pattern.test(text))?.[1] ?? DEFAULT_LANGUAGE
   );

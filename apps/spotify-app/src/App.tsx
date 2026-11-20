@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ConvertPage } from "./convert/ConvertPage";
 import { PENDING_PLAYLIST_EVENT, takePendingPlaylist } from "./pending";
 import { SettingsPage } from "./SettingsPage";
 import { summarize, useConnection } from "./status";
@@ -56,11 +57,10 @@ export function App() {
       </nav>
       <main className="syt-pad">
         {tab === "convert" && (
-          <p className="syt-muted">
-            {playlistUri
-              ? `Selected ${playlistUri}`
-              : "Pick a playlist to convert."}
-          </p>
+          <ConvertPage
+            playlistUri={playlistUri}
+            onPlaylistChange={setPlaylistUri}
+          />
         )}
         {tab === "library" && (
           <p className="syt-muted">Linked playlists go here.</p>

@@ -80,6 +80,9 @@ describe("matchTrack", () => {
     async status() {
       throw new Error("unused");
     },
+    async video() {
+      throw new Error("unused");
+    },
   };
   const deps = () => ({
     youtube,

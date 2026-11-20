@@ -40,6 +40,9 @@ beforeEach(() => {
       statusCalls.push(options);
       return status;
     },
+    async video(id) {
+      return id === track.videoId ? track : null;
+    },
   };
   const db = openDatabase(":memory:");
   matches = createMatchStore(db);
@@ -111,7 +114,7 @@ describe("youtube", () => {
         query: "Nightcall Kavinsky",
         kind: "song",
         limit: undefined,
-        lang: undefined,
+        lang: "en",
       },
     ]);
   });
@@ -122,6 +125,20 @@ describe("youtube", () => {
     expect(searches).toEqual([
       { query: "x", kind: "video", limit: 3, lang: "ja" },
     ]);
+  });
+
+  test("picks the search language from the query text", async () => {
+    await get(`/youtube/search?q=${encodeURIComponent("夜に駆ける")}`);
+
+    expect(searches[0]?.lang).toBe("ja");
+  });
+
+  test("looks up a single video", async () => {
+    expect(
+      await (await get(`/youtube/videos/${track.videoId}`)).json(),
+    ).toEqual(track);
+    expect((await get("/youtube/videos/abcdefghijk")).status).toBe(404);
+    expect((await get("/youtube/videos/bad")).status).toBe(400);
   });
 
   test("rejects a missing query or bad kind", async () => {
