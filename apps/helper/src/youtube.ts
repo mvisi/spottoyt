@@ -10,13 +10,24 @@ import { Innertube, Log, UniversalCache, YTNodes } from "youtubei.js";
 
 Log.setLevel(Log.Level.ERROR);
 
+export type SearchOptions = {
+  query: string;
+  kind: YoutubeTrackKind;
+  /**
+   * Cap on results. One request returns the first page (about 20) either
+   * way, and YouTube's ordering is noisy, so matching keeps them all.
+   */
+  limit?: number;
+  /**
+   * Language for result names. YouTube Music localizes artist and title
+   * names (米津玄師 → "Kenshi Yonezu" in English), so match the source.
+   */
+  lang?: string;
+};
+
 export type YoutubeClient = {
   status(options?: { refresh?: boolean }): Promise<YoutubeStatus>;
-  search(
-    query: string,
-    kind: YoutubeTrackKind,
-    limit: number,
-  ): Promise<YoutubeTrack[]>;
+  search(options: SearchOptions): Promise<YoutubeTrack[]>;
 };
 
 // A query that always has song results where YouTube Music is available.
@@ -24,8 +35,11 @@ const REGION_PROBE_QUERY = "Bohemian Rhapsody Queen";
 const STATUS_TTL_MS = 5 * 60 * 1000;
 
 export function createYoutubeClient(cookiePath: string): YoutubeClient {
-  let session: { cookieVersion: number; innertube: Promise<Innertube> } | null =
-    null;
+  // One session per result language, all rebuilt when the cookie changes.
+  const sessions = new Map<
+    string,
+    { cookieVersion: number; innertube: Promise<Innertube> }
+  >();
   let cachedStatus: { at: number; value: YoutubeStatus } | null = null;
 
   // Rebuild the session when the cookie file changes, so re-running
@@ -33,39 +47,36 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
   const cookieVersion = () =>
     existsSync(cookiePath) ? statSync(cookiePath).mtimeMs : 0;
 
-  const innertube = () => {
+  const innertube = (lang = "en") => {
     const version = cookieVersion();
-    if (!session || session.cookieVersion !== version) {
-      const cookie = version
-        ? Bun.file(cookiePath)
-            .text()
-            .then((text) => text.trim())
-        : Promise.resolve(undefined);
-      const created = cookie.then((value) =>
-        Innertube.create({
-          cookie: value,
-          // Results language and region. Doesn't bypass IP-based blocking.
-          lang: "en",
-          location: "US",
-          retrieve_player: false,
-          cache: new UniversalCache(false),
-        }),
-      );
-      // Don't keep a failed session around; retry on the next call.
-      created.catch(() => {
-        if (session?.innertube === created) session = null;
-      });
-      session = { cookieVersion: version, innertube: created };
-    }
-    return session.innertube;
+    const session = sessions.get(lang);
+    if (session && session.cookieVersion === version) return session.innertube;
+
+    const cookie = version
+      ? Bun.file(cookiePath)
+          .text()
+          .then((text) => text.trim())
+      : Promise.resolve(undefined);
+    const created = cookie.then((value) =>
+      Innertube.create({
+        cookie: value,
+        // Results language and region. Doesn't bypass IP-based blocking.
+        lang,
+        location: "US",
+        retrieve_player: false,
+        cache: new UniversalCache(false),
+      }),
+    );
+    // Don't keep a failed session around; retry on the next call.
+    created.catch(() => {
+      if (sessions.get(lang)?.innertube === created) sessions.delete(lang);
+    });
+    sessions.set(lang, { cookieVersion: version, innertube: created });
+    return created;
   };
 
-  const search = async (
-    query: string,
-    kind: YoutubeTrackKind,
-    limit: number,
-  ) => {
-    const yt = await innertube();
+  const search = async ({ query, kind, limit, lang }: SearchOptions) => {
+    const yt = await innertube(lang);
     const res = await yt.music.search(query, { type: kind });
     const items = (res.contents ?? [])
       .flatMap((shelf) =>
@@ -90,7 +101,8 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
 
     try {
       status.searchAvailable =
-        (await search(REGION_PROBE_QUERY, "song", 1)).length > 0;
+        (await search({ query: REGION_PROBE_QUERY, kind: "song", limit: 1 }))
+          .length > 0;
     } catch (error) {
       errors.push(`Search failed: ${message(error)}`);
     }

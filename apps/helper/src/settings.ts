@@ -5,13 +5,11 @@ import type { Db } from "./db";
 export const defaultSettings: Settings = {
   autoAcceptScore: 90,
   includeVideos: true,
-  searchLimit: 5,
 };
 
 export const settingsSchema = z.object({
   autoAcceptScore: z.number().int().min(0).max(100),
   includeVideos: z.boolean(),
-  searchLimit: z.number().int().min(1).max(20),
 }) satisfies z.ZodType<Settings>;
 
 export const settingsPatchSchema = settingsSchema.partial().strict();

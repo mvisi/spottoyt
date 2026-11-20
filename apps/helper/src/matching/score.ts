@@ -1,0 +1,353 @@
+// Scores YouTube Music candidates against a Spotify track. Pure functions only.
+//
+// Ranking is on match quality alone. Never factor in whether a video plays in
+// the user's region: they handle playback themselves and want the best match.
+import type {
+  MatchCandidate,
+  SpotifyTrack,
+  YoutubeTrack,
+} from "@spottoyt/shared";
+
+// Words that mark a different recording of the same song. A candidate with
+// one the Spotify title lacks (or the other way round) is a worse match.
+const EDITION_PENALTIES: Record<string, { extra: number; missing: number }> = {
+  live: { extra: 20, missing: 12 },
+  remix: { extra: 20, missing: 12 },
+  acoustic: { extra: 18, missing: 10 },
+  unplugged: { extra: 18, missing: 10 },
+  instrumental: { extra: 22, missing: 12 },
+  demo: { extra: 15, missing: 8 },
+  extended: { extra: 12, missing: 6 },
+  mashup: { extra: 25, missing: 12 },
+  cover: { extra: 30, missing: 12 },
+  karaoke: { extra: 35, missing: 12 },
+  nightcore: { extra: 35, missing: 12 },
+  slowed: { extra: 30, missing: 12 },
+  sped: { extra: 30, missing: 12 },
+  reverb: { extra: 20, missing: 8 },
+};
+const EDITION_LABELS: Record<string, string> = {
+  live: "Live version",
+  remix: "Remix",
+  acoustic: "Acoustic version",
+  unplugged: "Unplugged version",
+  instrumental: "Instrumental",
+  demo: "Demo",
+  extended: "Extended version",
+  mashup: "Mashup",
+  cover: "Cover",
+  karaoke: "Karaoke",
+  nightcore: "Nightcore",
+  slowed: "Slowed",
+  sped: "Sped up",
+  reverb: "Reverb edit",
+};
+
+// Words in video titles that don't change which song it is.
+const VIDEO_NOISE = new Set([
+  "official",
+  "audio",
+  "video",
+  "music",
+  "lyrics",
+  "lyric",
+  "visualizer",
+  "visualiser",
+  "hq",
+  "hd",
+  "4k",
+  "explicit",
+  "clean",
+  "mv",
+  "remaster",
+  "remastered",
+]);
+
+export function rankCandidates(
+  spotify: SpotifyTrack,
+  candidates: YoutubeTrack[],
+): MatchCandidate[] {
+  const seen = new Set<string>();
+  return candidates
+    .filter((c) => !seen.has(c.videoId) && seen.add(c.videoId))
+    .map((candidate, index) => ({
+      ...scoreCandidate(spotify, candidate),
+      index,
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ index: _index, ...candidate }) => candidate);
+}
+
+/**
+ * Auto-accept only a confident, clear winner. Near-ties go to review unless
+ * the best is very strong (the same song often appears on several releases).
+ */
+export function isConfidentMatch(
+  ranked: MatchCandidate[],
+  autoAcceptScore: number,
+): boolean {
+  const [best, second] = ranked;
+  if (!best || best.score < autoAcceptScore) return false;
+  return best.score >= 94 || best.score - (second?.score ?? 0) >= 4;
+}
+
+export function scoreCandidate(
+  spotify: SpotifyTrack,
+  candidate: YoutubeTrack,
+): MatchCandidate {
+  const reasons: string[] = [];
+
+  const title = titleSimilarity(spotify.title, candidate.title);
+  if (title < 0.9) reasons.push("Different title");
+
+  const artist = artistSimilarity(spotify.artists, candidate);
+  if (artist < 0.35) reasons.push("Different artist");
+  else if (artist < 0.95) reasons.push("Artists partly match");
+
+  const duration = durationSimilarity(spotify.durationMs, candidate.durationMs);
+  if (candidate.durationMs === undefined) reasons.push("Length unknown");
+  else {
+    const delta = Math.round(
+      (candidate.durationMs - spotify.durationMs) / 1000,
+    );
+    if (Math.abs(delta) > 2)
+      reasons.push(`${delta > 0 ? "+" : "−"}${Math.abs(delta)}s`);
+  }
+
+  const album =
+    spotify.album &&
+    candidate.album &&
+    normalize(baseTitle(spotify.album)) ===
+      normalize(baseTitle(candidate.album))
+      ? 1
+      : 0;
+
+  const kind = candidate.kind === "song" ? 1 : videoKindScore(candidate.title);
+  if (candidate.kind === "video") reasons.push(videoLabel(candidate.title));
+
+  let score =
+    100 *
+    (title * 0.47 +
+      artist * 0.25 +
+      duration * 0.18 +
+      kind * 0.06 +
+      album * 0.04);
+
+  for (const edition of editionDifferences(spotify.title, candidate.title)) {
+    score -= edition.penalty;
+    reasons.push(edition.label);
+  }
+  if (candidate.kind === "video") score *= videoOriginality(candidate.title);
+
+  // A weak title or a stranger's video can't make up for it elsewhere.
+  if (title < 0.55) score = Math.min(score, 55);
+  if (candidate.kind === "video" && artist < 0.35) score = Math.min(score, 84);
+
+  if (album && reasons.length === 0) reasons.push("Same album");
+
+  return {
+    ...candidate,
+    score: Math.round(clamp(score, 0, 100)),
+    reasons,
+  };
+}
+
+// ---------- Parts ----------
+
+export function normalize(value: string) {
+  return (
+    value
+      // Full-width letters and brackets (common in Japanese titles) to normal ones.
+      .normalize("NFKC")
+      .toLowerCase()
+      // Strip accents and other combining marks (é → e, が → か) so both
+      // sides compare the same way.
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
+      .replace(/[ßæœøłđðþı]/g, (char) => LETTER_FOLDS[char] ?? char)
+      .replace(/&/g, " and ")
+      .replace(/[^\p{Letter}\p{Number}]+/gu, " ")
+      .trim()
+  );
+}
+
+// Letters that don't decompose into a base letter plus accent.
+const LETTER_FOLDS: Record<string, string> = {
+  ß: "ss",
+  æ: "ae",
+  œ: "oe",
+  ø: "o",
+  ł: "l",
+  đ: "d",
+  ð: "d",
+  þ: "th",
+  ı: "i",
+};
+
+// Chinese and Japanese don't put spaces between words, so compare those
+// characters one by one instead of as a single long "word".
+const UNSPACED_SCRIPT =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+
+/**
+ * The song's name without "(feat. X)", "[Official Video]", "- Remastered
+ * 2011" and similar. Falls back to the full title when nothing is left.
+ */
+export function baseTitle(title: string) {
+  const stripped = title
+    .normalize("NFKC")
+    .replace(/\([^)]*\)|\[[^\]]*]/g, " ")
+    .replace(/\s+[-–—]\s+.*$/, " ")
+    .trim();
+  return stripped || title;
+}
+
+export function tokens(value: string) {
+  return normalize(value)
+    .split(" ")
+    .flatMap((word) =>
+      UNSPACED_SCRIPT.test(word) ? splitUnspaced(word) : [word],
+    )
+    .filter(Boolean);
+}
+
+/** "夜に駆けるremix" → ["夜", "に", "駆", "け", "る", "remix"] */
+function splitUnspaced(word: string) {
+  const out: string[] = [];
+  let latin = "";
+  for (const char of word) {
+    if (UNSPACED_SCRIPT.test(char)) {
+      if (latin) out.push(latin);
+      latin = "";
+      out.push(char);
+    } else {
+      latin += char;
+    }
+  }
+  if (latin) out.push(latin);
+  return out;
+}
+
+function titleSimilarity(spotifyTitle: string, candidateTitle: string) {
+  const a = tokens(baseTitle(spotifyTitle));
+  // Video titles often read "Artist - Song (Official Video)", so also try
+  // the part after the dash.
+  const options = [
+    baseTitle(candidateTitle),
+    baseTitle(candidateTitle.replace(/^.*?\s[-–—]\s/, "")),
+  ];
+
+  let best = 0;
+  for (const option of options) {
+    const b = tokens(option).filter((t) => !VIDEO_NOISE.has(t));
+    best = Math.max(best, tokenSimilarity(a, b));
+  }
+  return best;
+}
+
+function tokenSimilarity(a: string[], b: string[]) {
+  if (!a.length || !b.length) return 0;
+  if (a.join(" ") === b.join(" ")) return 1;
+  if (b.join(" ").includes(a.join(" "))) return 0.98;
+
+  const shared = intersection(a, b);
+  const containment = shared / a.length;
+  const dice = (shared * 2) / (a.length + b.length);
+  if (containment >= 0.95) return 0.96;
+  if (containment >= 0.75) return Math.max(0.86, dice);
+  return Math.max(dice, containment * 0.82);
+}
+
+function artistSimilarity(artists: string[], candidate: YoutubeTrack) {
+  // Videos often credit the artist only in the title, so search both.
+  const haystack = tokens(`${candidate.artists.join(" ")} ${candidate.title}`);
+  const [primary = "", ...featured] = artists;
+  const primaryScore = nameScore(primary, haystack);
+  if (!featured.length) return primaryScore;
+
+  const featuredScore =
+    featured.reduce((sum, name) => sum + nameScore(name, haystack), 0) /
+    featured.length;
+  return clamp(primaryScore * 0.78 + featuredScore * 0.22, 0, 1);
+}
+
+// Filler words that would make "The Beatles" partly match any title with "the".
+const NAME_FILLER = new Set(["the", "a", "an", "and"]);
+
+function nameScore(name: string, haystack: string[]) {
+  const all = tokens(name);
+  const meaningful = all.filter((token) => !NAME_FILLER.has(token));
+  const nameTokens = meaningful.length ? meaningful : all;
+  if (!nameTokens.length || !haystack.length) return 0;
+  return intersection(nameTokens, haystack) / nameTokens.length;
+}
+
+function durationSimilarity(spotifyMs: number, candidateMs?: number) {
+  if (candidateMs === undefined) return 0.5;
+  const delta = Math.abs(spotifyMs - candidateMs) / 1000;
+  if (delta <= 2) return 1;
+  if (delta <= 10) return 0.95;
+  if (delta <= 20) return 0.82;
+  if (delta <= 45) return 0.55;
+  if (delta <= 90) return 0.18;
+  return 0;
+}
+
+function editionDifferences(spotifyTitle: string, candidateTitle: string) {
+  const mine = new Set(tokens(spotifyTitle));
+  const theirs = new Set(tokens(candidateTitle));
+  const out: Array<{ penalty: number; label: string }> = [];
+
+  for (const [word, penalty] of Object.entries(EDITION_PENALTIES)) {
+    const label = EDITION_LABELS[word] ?? word;
+    if (theirs.has(word) && !mine.has(word)) {
+      out.push({ penalty: penalty.extra, label });
+    } else if (mine.has(word) && !theirs.has(word)) {
+      out.push({
+        penalty: penalty.missing,
+        label: `Not the ${label.toLowerCase()}`,
+      });
+    }
+  }
+  return out;
+}
+
+function videoKindScore(title: string) {
+  const t = new Set(tokens(title));
+  return ["official", "audio", "video", "visualizer", "visualiser"].some((w) =>
+    t.has(w),
+  )
+    ? 0.9
+    : 0.74;
+}
+
+/** Lyric uploads and random re-uploads are usually worse than official ones. */
+function videoOriginality(title: string) {
+  const t = new Set(tokens(title));
+  const lyric = t.has("lyric") || t.has("lyrics");
+  const official = t.has("official");
+  const format = ["audio", "video", "visualizer", "visualiser"].some((w) =>
+    t.has(w),
+  );
+  if (lyric) return official ? 0.86 : 0.72;
+  if (official) return format ? 0.97 : 0.94;
+  if (format) return 0.9;
+  return 0.82;
+}
+
+function videoLabel(title: string) {
+  const t = new Set(tokens(title));
+  if (t.has("lyric") || t.has("lyrics")) return "Lyric video";
+  if (t.has("official") && t.has("audio")) return "Official audio upload";
+  if (t.has("official")) return "Official video";
+  return "Video upload";
+}
+
+function intersection(a: string[], b: string[]) {
+  const set = new Set(b);
+  return a.filter((token) => set.has(token)).length;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}

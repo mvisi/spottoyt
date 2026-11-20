@@ -7,6 +7,20 @@ const migrations: string[] = [
      key TEXT PRIMARY KEY,
      value TEXT NOT NULL
    );`,
+  // Raw search results per Spotify track, and which searches produced them.
+  // Kept unscored, so scoring changes apply without searching again.
+  `CREATE TABLE track_candidates (
+     spotify_uri TEXT PRIMARY KEY,
+     candidates TEXT NOT NULL,
+     searches TEXT NOT NULL,
+     searched_at TEXT NOT NULL
+   );
+   -- Matches you picked by hand. These always win over search results.
+   CREATE TABLE manual_matches (
+     spotify_uri TEXT PRIMARY KEY,
+     track TEXT NOT NULL,
+     picked_at TEXT NOT NULL
+   );`,
 ];
 
 export type Db = Database;
