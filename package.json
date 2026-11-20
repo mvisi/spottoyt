@@ -10,6 +10,7 @@
     "dev": "bun run --filter '@spottoyt/helper' --filter '@spottoyt/spotify-app' dev",
     "build": "bun run --filter '@spottoyt/spotify-app' build",
     "link-spotify": "bun run --filter '@spottoyt/spotify-app' link-spotify",
+    "setup:youtube": "bun --env-file=.env apps/helper/scripts/setup-youtube.ts",
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "biome lint .",

@@ -20,6 +20,32 @@ bun run link-spotify   # builds, installs into Spicetify, and runs spicetify app
 
 Spotify restarts and **SpottoYT** shows up in the sidebar. You can also right-click a playlist and pick **Convert with SpottoYT**.
 
+### YouTube Music sign-in
+
+```bash
+bun run setup:youtube
+```
+
+It asks for your YouTube Music cookie (open music.youtube.com signed in, DevTools → Network, any `youtubei` request, copy the `cookie` request header), checks that it signs in, and saves it to `~/.config/spottoyt/youtube-cookie`. Run it again whenever the cookie expires.
+
+### Unsupported regions
+
+YouTube Music returns no songs or videos to IPs in countries where it isn't available. To route only the helper through a VPN, run a WireGuard config (Proton and most providers offer them) as a local proxy with [wireproxy](https://github.com/windtf/wireproxy):
+
+```ini
+# ~/.config/spottoyt/wireproxy.conf
+WGConfig = /home/you/.config/spottoyt/proton-us.conf
+
+[http]
+BindAddress = 127.0.0.1:25345
+```
+
+```bash
+wireproxy -c ~/.config/spottoyt/wireproxy.conf
+```
+
+Then set `HTTPS_PROXY=http://127.0.0.1:25345` in `.env`. The helper and `setup:youtube` pick it up.
+
 ## Development
 
 ```bash

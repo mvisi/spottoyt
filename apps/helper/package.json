@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/main.ts",
-    "start": "bun src/main.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "bun --env-file=../../.env --watch src/main.ts",
+    "start": "bun --env-file=../../.env src/main.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts"
   },
   "dependencies": {
-    "@spottoyt/shared": "workspace:*"
+    "@spottoyt/shared": "workspace:*",
+    "youtubei.js": "18.3.0"
   }
 }
