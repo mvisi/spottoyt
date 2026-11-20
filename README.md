@@ -1,43 +1,48 @@
 # SpottoYT
 
-Local-first Spotify to YouTube Music playlist conversion app.
+Local-first app for converting Spotify playlists into reviewed YouTube Music playlists.
 
-## Stack
+## Layout
 
-- Bun workspace monorepo
-- React + Vite frontend
-- Shared shadcn-style UI package
-- Fastify backend
-- Shared TypeScript/Zod contracts
-- Spicetify extension for local Spotify desktop imports
-- Reserved Python worker for future `ytmusicapi`
+```text
+apps/web                  React + Vite UI
+apps/api                  Fastify API (matching, storage, import events)
+apps/spicetify-extension  Spotify desktop bridge that pushes playlists to the API
+apps/ytmusic-worker       Python worker using ytmusicapi
+packages/shared           Shared Zod schemas and types
+packages/ui               shadcn-style components and Tailwind theme
+```
 
-## Commands
+## Setup
 
 ```bash
 bun install
+cp .env.example .env
+
+# YouTube Music worker
+python -m venv apps/ytmusic-worker/.venv
+apps/ytmusic-worker/.venv/bin/pip install -r apps/ytmusic-worker/requirements.txt
+
 bun run dev
-bun run test
-bun run typecheck
-bun run lint
+```
+
+The API picks up the worker's `.venv` automatically and falls back to `python` on the PATH.
+
+## Spotify import
+
+Build the extension and install it into Spicetify:
+
+```bash
 bun run build:spicetify
+cp apps/spicetify-extension/dist/spottoyt.js ~/.config/spicetify/Extensions/
+spicetify config extensions spottoyt.js
+spicetify apply
 ```
 
-## Workspace
+In Spotify desktop, right-click a playlist and choose **Extract to SpottoYT**. The extension posts the playlist's metadata (no credentials) to `http://127.0.0.1:4317/imports/spicetify`, and the web app picks it up over `/events`.
 
-```text
-apps/web            React app shell
-apps/api            Local Fastify API
-apps/spicetify-extension Spotify desktop bridge
-apps/ytmusic-worker Future Python YouTube Music adapter
-packages/shared     Shared schemas and types
-packages/ui         Shared shadcn components and Tailwind theme tokens
+If the API runs on another port, set it from Spotify DevTools:
+
+```js
+Spicetify.LocalStorage.set("spottoyt-api-url", "http://127.0.0.1:4317")
 ```
-
-## Spotify Import
-
-The Spicetify extension in `apps/spicetify-extension` pushes the currently open
-Spotify desktop playlist to the local API and updates the website through
-server-sent events.
-
-See `docs/spicetify-extension.md` for local setup.
