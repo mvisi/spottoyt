@@ -1,6 +1,5 @@
 {
   "name": "spottoyt",
-  "version": "0.1.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -8,38 +7,17 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -k -n api,web -c cyan,magenta \"bun run dev:api\" \"bun run dev:web\"",
-    "dev:api": "bun run --filter @spottoyt/api dev",
-    "dev:web": "bun run --filter @spottoyt/web dev",
-    "typecheck": "bun run typecheck:shared && bun run typecheck:ui && bun run typecheck:api && bun run typecheck:web && bun run typecheck:spicetify",
-    "typecheck:shared": "bun run --filter @spottoyt/shared typecheck",
-    "typecheck:ui": "bun run --filter @spottoyt/ui typecheck",
-    "typecheck:api": "bun run --filter @spottoyt/api typecheck",
-    "typecheck:web": "bun run --filter @spottoyt/web typecheck",
-    "typecheck:spicetify": "bun run --filter @spottoyt/spicetify-extension typecheck",
-    "build:spicetify": "bun run --filter @spottoyt/spicetify-extension build",
-    "test": "bun run test:shared && bun run test:api && bun run test:web",
-    "test:shared": "bun run --filter @spottoyt/shared test",
-    "test:api": "bun run --filter @spottoyt/api test",
-    "test:web": "bun run --filter @spottoyt/web test",
+    "dev": "bun run --filter '@spottoyt/helper' --filter '@spottoyt/spotify-app' dev",
+    "build": "bun run --filter '@spottoyt/spotify-app' build",
+    "link-spotify": "bun run --filter '@spottoyt/spotify-app' link-spotify",
+    "test": "bun test",
+    "typecheck": "bun run --filter '*' typecheck",
     "lint": "biome lint .",
     "check": "biome check ."
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.5",
-    "@tailwindcss/vite": "^4.1.17",
-    "@types/node": "^24.10.1",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^14.6.1",
+    "@biomejs/biome": "^2.4.13",
     "@types/bun": "^1.3.3",
-    "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
-    "concurrently": "^9.2.1",
-    "jsdom": "^27.2.0",
-    "typescript": "^5.9.3",
-    "vite": "^7.2.4",
-    "vitest": "^4.0.15"
+    "typescript": "^5.9.3"
   }
 }

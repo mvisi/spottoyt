@@ -1,48 +1,42 @@
 # SpottoYT
 
-Local-first app for converting Spotify playlists into reviewed YouTube Music playlists.
+Convert Spotify playlists into YouTube Music playlists, reviewed from inside Spotify desktop.
 
-## Layout
+- `apps/spotify-app`: Spicetify custom app. All the UI lives here.
+- `apps/helper`: local Bun server that talks to YouTube Music and keeps the match database.
+- `packages/shared`: the contract between the two.
 
-```text
-apps/web                  React + Vite UI
-apps/api                  Fastify API (matching, storage, import events)
-apps/spicetify-extension  Spotify desktop bridge that pushes playlists to the API
-apps/ytmusic-worker       Python worker using ytmusicapi
-packages/shared           Shared Zod schemas and types
-packages/ui               shadcn-style components and Tailwind theme
-```
+## Requirements
+
+- [Bun](https://bun.sh)
+- Spotify desktop with [Spicetify](https://spicetify.app) installed
 
 ## Setup
 
 ```bash
 bun install
-cp .env.example .env
-
-# YouTube Music worker
-python -m venv apps/ytmusic-worker/.venv
-apps/ytmusic-worker/.venv/bin/pip install -r apps/ytmusic-worker/requirements.txt
-
-bun run dev
+bun run link-spotify   # builds, installs into Spicetify, and runs spicetify apply
 ```
 
-The API picks up the worker's `.venv` automatically and falls back to `python` on the PATH.
+Spotify restarts and **SpottoYT** shows up in the sidebar. You can also right-click a playlist and pick **Convert with SpottoYT**.
 
-## Spotify import
-
-Build the extension and install it into Spicetify:
+## Development
 
 ```bash
-bun run build:spicetify
-cp apps/spicetify-extension/dist/spottoyt.js ~/.config/spicetify/Extensions/
-spicetify config extensions spottoyt.js
-spicetify apply
+bun run dev            # helper on :4317, plus a watch build copied into Spicetify
+spicetify watch -a     # in another terminal: reloads Spotify when the app changes
 ```
 
-In Spotify desktop, right-click a playlist and choose **Extract to SpottoYT**. The extension posts the playlist's metadata (no credentials) to `http://127.0.0.1:4317/imports/spicetify`, and the web app picks it up over `/events`.
+```bash
+bun run typecheck
+bun run test
+bun run lint
+```
 
-If the API runs on another port, set it from Spotify DevTools:
+The helper reads `SPOTTOYT_PORT` and `SPOTTOYT_DATA_DIR` (see `.env.example`). If you change the port, set the app's helper URL from Spotify DevTools:
 
 ```js
-Spicetify.LocalStorage.set("spottoyt-api-url", "http://127.0.0.1:4317")
+Spicetify.LocalStorage.set("spottoyt:helper-url", "http://127.0.0.1:4318");
 ```
+
+To uninstall: `spicetify config custom_apps spottoyt- && spicetify apply`.
