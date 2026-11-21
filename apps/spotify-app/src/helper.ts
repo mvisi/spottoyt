@@ -23,6 +23,9 @@ export function helperUrl() {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${helperUrl()}${path}`, {
+    // Always ask the helper. Spotify's browser cached an old error once and
+    // kept showing it.
+    cache: "no-store",
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
