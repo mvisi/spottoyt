@@ -3,7 +3,7 @@ import type {
   PlaylistState,
   YoutubeTrack,
 } from "@spottoyt/shared";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { helper, youtubePlaylistUrl } from "../helper";
 import type { Playlist } from "../spotify";
 import { Art, Icon, notify } from "../ui";
@@ -21,6 +21,7 @@ import {
   type Row,
   type SavedStates,
   type Suspect,
+  searchRows,
   tracksToAdd,
 } from "./reviewState";
 import type { ReviewActions } from "./shared";
@@ -110,6 +111,40 @@ export function Review({
       layout === "focus" ? rows.filter(needsReview) : filterRows(rows, filter),
     [rows, layout, filter],
   );
+
+  // Find a song: jumps to matching rows instead of hiding the rest.
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const hits = useMemo(() => {
+    if (!query.trim()) return [];
+    const found = new Set(searchRows(list, query));
+    return list.flatMap((r, i) => (found.has(r) ? [i] : []));
+  }, [list, query]);
+  const hitIndex = hits.indexOf(selected);
+
+  function jump(text: string) {
+    setQuery(text);
+    if (!text.trim()) return;
+    const found = searchRows(list, text);
+    const first = found[0];
+    if (first) {
+      setSelected(list.indexOf(first));
+      return;
+    }
+    // The song may be hidden by the current filter or layout. Look in all.
+    const anywhere = searchRows(rows, text)[0];
+    if (anywhere) {
+      setLayout("table");
+      setFilter("all");
+      setSelected(rows.indexOf(anywhere));
+    }
+  }
+
+  function nextHit(step: 1 | -1) {
+    if (!hits.length) return;
+    const from = hitIndex === -1 ? (step === 1 ? -1 : 0) : hitIndex;
+    setSelected(hits[(from + step + hits.length) % hits.length] as number);
+  }
 
   const setOverride = useCallback((uri: string, override: Override | null) => {
     setOverrides((prev) => {
@@ -245,7 +280,8 @@ export function Review({
       const row = list[selected];
       const key = e.key;
 
-      if (key === "j" || key === "ArrowDown")
+      if (key === "/") searchRef.current?.focus();
+      else if (key === "j" || key === "ArrowDown")
         setSelected((s) => Math.min(s + 1, list.length - 1));
       else if (key === "k" || key === "ArrowUp")
         setSelected((s) => Math.max(s - 1, 0));
@@ -490,6 +526,43 @@ export function Review({
             )}
           </div>
         )}
+
+      <div className="syt-search">
+        <Icon.search />
+        <input
+          ref={searchRef}
+          className="syt-input grow"
+          placeholder="Jump to a song by title, artist or album  ( / )"
+          value={query}
+          onChange={(e) => jump(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setQuery("");
+              e.currentTarget.blur();
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              nextHit(e.shiftKey ? -1 : 1);
+            }
+          }}
+        />
+        {query.trim() && (
+          <span className="syt-muted small">
+            {hits.length
+              ? `${hitIndex === -1 ? "–" : hitIndex + 1} of ${hits.length}`
+              : "No matches"}
+          </span>
+        )}
+        {query && (
+          <button
+            type="button"
+            className="syt-ic"
+            title="Clear (Esc)"
+            onClick={() => setQuery("")}
+          >
+            <Icon.close />
+          </button>
+        )}
+      </div>
 
       <div className="syt-bar">
         {link ? (

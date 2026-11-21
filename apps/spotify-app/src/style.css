@@ -743,3 +743,15 @@ button.syt-dot:hover {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ---------- Finding a song ---------- */
+.syt-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: var(--syt-sub);
+}
+.syt-search .syt-input {
+  max-width: 420px;
+}

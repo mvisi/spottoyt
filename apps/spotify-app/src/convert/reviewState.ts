@@ -177,6 +177,39 @@ export function countRows(rows: Row[]): Counts {
   return counts;
 }
 
+const fold = (text: string) =>
+  text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+
+/** The YouTube track a row currently shows, if any. */
+export function shownTrack(row: Row): YoutubeTrack | undefined {
+  const d = row.decision;
+  if (d?.kind === "accepted" || d?.kind === "added") return d.track;
+  if (d?.kind === "pending") return d.pick;
+  return undefined;
+}
+
+/**
+ * Rows matching every word of `query`, in the Spotify title, artists or
+ * album, or the YouTube version's title or artists. Accents don't matter.
+ */
+export function searchRows(rows: Row[], query: string): Row[] {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return rows;
+  return rows.filter((row) => {
+    const yt = shownTrack(row);
+    const text = fold(
+      [
+        row.track.title,
+        ...row.track.artists,
+        row.track.album ?? "",
+        yt?.title ?? "",
+        ...(yt?.artists ?? []),
+      ].join(" "),
+    );
+    return words.every((word) => text.includes(word));
+  });
+}
+
 /** Index of the next row after `from` that still needs a decision, or -1. */
 export function nextOpen(rows: Row[], from: number): number {
   for (let i = from + 1; i < rows.length; i++) {

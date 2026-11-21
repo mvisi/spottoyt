@@ -8,6 +8,7 @@ import {
   filterRows,
   nextOpen,
   type Override,
+  searchRows,
   tracksToAdd,
 } from "./reviewState";
 
@@ -158,5 +159,29 @@ describe("rows", () => {
       accepted: 1,
       skipped: 1,
     });
+  });
+
+  test("search matches every word, either side, ignoring accents", () => {
+    const rows = buildRows(
+      [
+        { ...track(1), title: "Señorita", artists: ["Shawn Mendes"] },
+        { ...track(2), title: "Nightcall", artists: ["Kavinsky"] },
+      ],
+      new Map(),
+      new Map(),
+      {
+        "spotify:track:2": {
+          state: "added",
+          track: { ...candidate("y"), title: "Nightcall (Live)" },
+          at: "x",
+        },
+      },
+    );
+    const uris = (q: string) => searchRows(rows, q).map((r) => r.track.uri);
+
+    expect(uris("senorita mendes")).toEqual(["spotify:track:1"]);
+    expect(uris("live")).toEqual(["spotify:track:2"]);
+    expect(uris("  ")).toHaveLength(2);
+    expect(uris("nightcall mendes")).toEqual([]);
   });
 });
