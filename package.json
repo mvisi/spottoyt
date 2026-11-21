@@ -11,6 +11,8 @@
     "build": "bun run --filter '@spottoyt/spotify-app' build",
     "link-spotify": "bun run --filter '@spottoyt/spotify-app' link-spotify",
     "vpn": "wireproxy -s -c ~/.config/spottoyt/wireproxy.conf",
+    "backup": "bun scripts/backup.ts",
+    "restore": "bun scripts/restore.ts",
     "setup:youtube": "bun --env-file=.env apps/helper/scripts/setup-youtube.ts",
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck",

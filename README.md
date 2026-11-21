@@ -52,6 +52,16 @@ Creating a playlist on YouTube Music links it to the Spotify one. The Library ta
 
 Syncing only ever adds. Nothing is removed from the YouTube playlist, and the Spotify playlist is never changed. Songs you added on YouTube yourself are listed as "only on YouTube Music" so you can add them to Spotify by hand, and tracks you removed on YouTube aren't added back.
 
+## Moving to another machine
+
+```bash
+bun run backup                 # spottoyt-backup-<date>.zip in the current folder
+bun run backup out.zip --no-secrets   # leave out the cookie and VPN configs
+bun run restore spottoyt-backup-<date>.zip   # on the new machine, with the helper stopped
+```
+
+The backup holds the database (matches, your picks, linked playlists) and `~/.config/spottoyt` (YouTube cookie, wireproxy and WireGuard configs). With those included the zip is a secret, so don't share it. Restore keeps any files it replaces as `*.before-restore-<time>`, and fixes paths in `wireproxy.conf` if your home folder changed.
+
 ## Development
 
 ```bash
