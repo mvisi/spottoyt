@@ -1,6 +1,7 @@
 // Which view the app shows, kept in Spotify's history so its back and
 // forward buttons move between views instead of leaving the app.
-import { useEffect, useState } from "react";
+// No React here: the context-menu extension imports this at Spotify startup,
+// before Spicetify.React exists. The hook lives in useView.ts.
 
 export type Tab = "convert" | "library" | "settings";
 
@@ -16,7 +17,7 @@ export const APP_PATH = "/spottoyt";
 const TABS: Tab[] = ["convert", "library", "settings"];
 
 /** The view in a location's query, e.g. `?tab=convert&playlist=spotify:…`. */
-function parse(location: Spicetify.Platform.Location): View {
+export function parse(location: Spicetify.Platform.Location): View {
   const q = new URLSearchParams(location.search ?? "");
   const tab = q.get("tab") as Tab;
   const from = q.get("from") as Tab;
@@ -37,19 +38,4 @@ export function navigate(view: View) {
     pathname: APP_PATH,
     search: `?${q}`,
   });
-}
-
-export function useView(): View {
-  const history = Spicetify.Platform.History;
-  const [view, setView] = useState(() => parse(history.location));
-  useEffect(
-    () =>
-      history.listen((location) => {
-        if (location.pathname.startsWith(APP_PATH)) {
-          setView(parse(location));
-        }
-      }),
-    [history],
-  );
-  return view;
 }

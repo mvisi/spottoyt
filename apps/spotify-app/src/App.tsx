@@ -1,8 +1,9 @@
 import { ConvertPage } from "./convert/ConvertPage";
 import { LibraryPage } from "./LibraryPage";
-import { navigate, type Tab, useView, type View } from "./nav";
+import { navigate, type Tab, type View } from "./nav";
 import { SettingsPage } from "./SettingsPage";
 import { summarize, useConnection } from "./status";
+import { useView } from "./useView";
 
 const tabs: Array<[Tab, string]> = [
   ["convert", "Convert"],
