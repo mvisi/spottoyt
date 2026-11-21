@@ -1,6 +1,7 @@
 // Runs matching for many tracks at once and keeps the results in memory
 // while the app polls for them.
 import type { MatchJob, SpotifyTrack, TrackMatch } from "@spottoyt/shared";
+import { describeError, log } from "../log";
 
 export type MatchJobs = {
   start(tracks: SpotifyTrack[], options?: { fresh?: boolean }): MatchJob;
@@ -48,6 +49,12 @@ export function createMatchJobs(match: MatchFn): MatchJobs {
           consecutiveErrors = 0;
         } catch (error) {
           consecutiveErrors++;
+          log.warn("Matching a track failed", {
+            job: job.id,
+            track: `${track.artists.join(", ")} - ${track.title}`,
+            uri: track.uri,
+            ...describeError(error),
+          });
           result = {
             spotifyUri: track.uri,
             status: "error",
@@ -65,8 +72,22 @@ export function createMatchJobs(match: MatchFn): MatchJobs {
       }
     };
 
+    const started = performance.now();
+    log.info("Match job started", {
+      job: job.id,
+      tracks: tracks.length,
+      fresh,
+    });
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     if (job.status === "running") job.status = "done";
+    const counts: Record<string, number> = {};
+    for (const r of job.results) counts[r.status] = (counts[r.status] ?? 0) + 1;
+    (job.status === "failed" ? log.warn : log.info)(`Match job ${job.status}`, {
+      job: job.id,
+      seconds: Math.round((performance.now() - started) / 1000),
+      ...counts,
+      ...(job.error ? { error: job.error } : {}),
+    });
     prune();
   };
 

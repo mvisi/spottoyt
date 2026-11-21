@@ -9,6 +9,7 @@ import type {
   YoutubeTrack,
 } from "@spottoyt/shared";
 import { z } from "zod";
+import { describeError, log } from "./log";
 import type { MatchJobs } from "./matching/jobs";
 import { languageForText } from "./matching/language";
 import type { MatchStore } from "./matching/store";
@@ -207,12 +208,12 @@ export function createHandler(deps: Deps) {
     }),
   ];
 
-  return async function handle(req: Request): Promise<Response> {
-    if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders });
-    }
+  // Polls and health checks are frequent, so they're only logged when
+  // something goes wrong.
+  const quiet = (method: string, path: string) =>
+    path === "/health" || (method === "GET" && path.startsWith("/match-jobs/"));
 
-    const url = new URL(req.url);
+  const respond = async (req: Request, url: URL): Promise<Response> => {
     const found = matchRoute(routes, req.method, url.pathname);
     if (!found) return json<ErrorResponse>({ error: "Not found" }, 404);
 
@@ -222,10 +223,41 @@ export function createHandler(deps: Deps) {
       if (error instanceof HttpError) {
         return json<ErrorResponse>({ error: error.message }, error.status);
       }
-      console.error(error);
+      log.error(`${req.method} ${readable(url)} failed`, {
+        ...describeError(error),
+      });
       return json<ErrorResponse>({ error: "Internal error" }, 500);
     }
   };
+
+  return async function handle(req: Request): Promise<Response> {
+    if (req.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }
+
+    const url = new URL(req.url);
+    const started = performance.now();
+    const res = await respond(req, url);
+    const ms = Math.round(performance.now() - started);
+    if (res.status >= 400 || !quiet(req.method, url.pathname)) {
+      const line = `${req.method} ${readable(url)} ${res.status} ${ms}ms`;
+      if (res.status >= 400) {
+        const body = await res.clone().text();
+        log.warn(line, { response: body.slice(0, 500) });
+      } else {
+        log.info(line);
+      }
+    }
+    return res;
+  };
+}
+
+/** Path and query with the query decoded, so 米津玄師 stays readable in logs. */
+function readable(url: URL) {
+  const query = [...url.searchParams]
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+  return query ? `${url.pathname}?${query}` : url.pathname;
 }
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {

@@ -13,6 +13,10 @@ export const config = {
   // Credentials. Kept out of the repo and readable only by the user.
   configDir:
     process.env.SPOTTOYT_CONFIG_DIR || xdg("XDG_CONFIG_HOME", ".config"),
+  // Logs. Attach helper.log when reporting a problem.
+  stateDir:
+    process.env.SPOTTOYT_STATE_DIR || xdg("XDG_STATE_HOME", ".local/state"),
 };
 
 export const youtubeCookiePath = join(config.configDir, "youtube-cookie");
+export const logPath = join(config.stateDir, "helper.log");

@@ -7,6 +7,7 @@ import type {
   YoutubeTrackKind,
 } from "@spottoyt/shared";
 import { Innertube, Log, UniversalCache, YTNodes } from "youtubei.js";
+import { describeError, log } from "./log";
 
 Log.setLevel(Log.Level.ERROR);
 
@@ -35,6 +36,47 @@ export type YoutubeClient = {
 // A query that always has song results where YouTube Music is available.
 const REGION_PROBE_QUERY = "Bohemian Rhapsody Queen";
 const STATUS_TTL_MS = 5 * 60 * 1000;
+/**
+ * Per request. A connection the proxy dropped (e.g. wireproxy restarted)
+ * can hang without ever failing, so give up and let retryNetwork try again.
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+/** Requests slower than this are logged. */
+const SLOW_REQUEST_MS = 4_000;
+
+/** fetch with a timeout, logging slow and failed YouTube requests. */
+export const youtubeFetch = (async (input, init) => {
+  const request = input instanceof Request ? input : null;
+  const url = new URL(request ? request.url : String(input));
+  const signals = [AbortSignal.timeout(REQUEST_TIMEOUT_MS)];
+  const own = init?.signal ?? request?.signal;
+  if (own) signals.push(own);
+  const started = performance.now();
+  const elapsed = () => Math.round(performance.now() - started);
+  try {
+    const res = await fetch(input, {
+      ...init,
+      signal: AbortSignal.any(signals),
+    });
+    if (!res.ok) {
+      log.warn("YouTube request failed", {
+        path: url.pathname,
+        status: res.status,
+        ms: elapsed(),
+      });
+    } else if (elapsed() > SLOW_REQUEST_MS) {
+      log.warn("Slow YouTube request", { path: url.pathname, ms: elapsed() });
+    }
+    return res;
+  } catch (error) {
+    log.warn("YouTube request failed", {
+      path: url.pathname,
+      ms: elapsed(),
+      ...describeError(error),
+    });
+    throw error;
+  }
+}) as typeof fetch;
 
 export function createYoutubeClient(cookiePath: string): YoutubeClient {
   // One session per result language, all rebuilt when the cookie changes.
@@ -66,11 +108,16 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
         lang,
         location: "US",
         retrieve_player: false,
+        fetch: youtubeFetch,
         cache: new UniversalCache(false),
       }),
     );
     // Don't keep a failed session around; retry on the next call.
-    created.catch(() => {
+    created.catch((error) => {
+      log.warn("Couldn't create a YouTube session", {
+        lang,
+        ...describeError(error),
+      });
       if (sessions.get(lang)?.innertube === created) sessions.delete(lang);
     });
     sessions.set(lang, { cookieVersion: version, innertube: created });
@@ -232,7 +279,7 @@ export function toYoutubeTrackFromInfo(
 // Errors from the connection itself, e.g. the VPN proxy resetting a socket.
 // These usually succeed on a second try.
 const NETWORK_ERROR =
-  /ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE|socket|Unable to connect|fetch failed|network/i;
+  /ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE|socket|Unable to connect|fetch failed|network|TimeoutError|timed out/i;
 
 export async function retryNetwork<T>(
   fn: () => Promise<T>,
@@ -244,12 +291,17 @@ export async function retryNetwork<T>(
     } catch (error) {
       const delay = delays[attempt];
       const code = (error as { code?: string }).code ?? "";
+      const name = error instanceof Error ? error.name : "";
       if (
         delay === undefined ||
-        !NETWORK_ERROR.test(`${code} ${message(error)}`)
+        !NETWORK_ERROR.test(`${code} ${name} ${message(error)}`)
       ) {
         throw error;
       }
+      log.warn(`Network error, retrying in ${delay}ms`, {
+        attempt: attempt + 1,
+        error: `${name} ${message(error)}`,
+      });
       await Bun.sleep(delay);
     }
   }

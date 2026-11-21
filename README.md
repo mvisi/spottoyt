@@ -53,6 +53,8 @@ bun run dev            # wireproxy, helper on :4317, plus a watch build copied i
 spicetify watch -a     # in another terminal: reloads Spotify when the app changes
 ```
 
+The helper logs to `~/.local/state/spottoyt/helper.log` (moved to `helper.log.1` past 5 MB). Include it when reporting a problem.
+
 ```bash
 bun run typecheck
 bun run test
