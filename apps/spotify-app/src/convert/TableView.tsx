@@ -98,7 +98,7 @@ export function TableView({
                     type="button"
                     className="syt-ic"
                     title="Try again"
-                    onClick={() => actions.rematch(row)}
+                    onClick={() => actions.searchAgain(row)}
                   >
                     <Icon.retry />
                   </button>
@@ -175,6 +175,13 @@ export function TableView({
                     link
                   </button>
                 )}
+                <button
+                  type="button"
+                  className="syt-link"
+                  onClick={() => actions.searchAgain(row)}
+                >
+                  <Icon.retry /> Run the automatic search again
+                </button>
               </div>
             )}
           </div>

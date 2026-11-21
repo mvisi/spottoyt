@@ -92,23 +92,28 @@ export type MatchDeps = {
 export async function matchTrack(
   track: SpotifyTrack,
   deps: MatchDeps,
+  /**
+   * `fresh` runs every search again, for when YouTube's results have
+   * changed. New results are added to the cached ones, not swapped in.
+   */
   options: { fresh?: boolean } = {},
 ): Promise<TrackMatch> {
   const settings = deps.settings();
   const retry = deps.retry ?? withRetry;
   const manual = deps.store.getManual(track.uri);
-  const cached = options.fresh ? null : deps.store.getCandidates(track.uri);
+  const fresh = options.fresh ?? false;
+  const cached = deps.store.getCandidates(track.uri);
 
   const candidates: YoutubeTrack[] = [...(cached?.candidates ?? [])];
-  const searches = new Set(cached?.searches ?? []);
+  const searches = new Set(fresh ? [] : (cached?.searches ?? []));
   let ranked = rankCandidates(track, candidates);
   let searched = false;
 
   // A manual pick is final, so only search if there's nothing to show beside it.
   const steps =
-    manual && candidates.length ? [] : planSearches(track, settings);
+    manual && candidates.length && !fresh ? [] : planSearches(track, settings);
   for (const step of steps) {
-    if (isConfidentMatch(ranked, settings.autoAcceptScore)) break;
+    if (!fresh && isConfidentMatch(ranked, settings.autoAcceptScore)) break;
     if (searches.has(searchKey(step))) continue;
 
     const results = await retry(() => deps.youtube.search(step));

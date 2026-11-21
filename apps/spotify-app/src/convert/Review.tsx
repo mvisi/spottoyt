@@ -125,8 +125,8 @@ export function Review({
     pick(row, track) {
       setOverride(row.track.uri, { kind: "pending", pick: track });
     },
-    rematch(row) {
-      void run([row.track]);
+    searchAgain(row) {
+      searchAgain([row]);
     },
   };
 
@@ -171,6 +171,26 @@ export function Review({
 
   const matching =
     progress.status === "running" || progress.status === "starting";
+  // Unsure tracks you haven't decided on: worth another search.
+  const unsureRows = rows.filter(
+    (r) => needsReview(r) && r.decision?.kind === "pending",
+  );
+
+  function searchAgain(targets: Row[]) {
+    if (matching) {
+      notify("Wait for matching to finish first.");
+      return;
+    }
+    // Drop unconfirmed picks so the new results show. Accepted picks are
+    // saved in the helper and survive the search.
+    for (const row of targets) {
+      if (row.decision?.kind !== "accepted") setOverride(row.track.uri, null);
+    }
+    void run(
+      targets.map((r) => r.track),
+      true,
+    );
+  }
   const failedRows = rows.filter(
     (r) => r.match?.status === "error" || !r.match,
   );
@@ -257,6 +277,16 @@ export function Review({
           {decided} of {counts.total} decided
         </span>
         <span className="syt-spacer" />
+        {!matching && unsureRows.length > 0 && (
+          <button
+            type="button"
+            className="syt-ghost"
+            title="YouTube's results change over time. Searching again can find what was missing."
+            onClick={() => searchAgain(unsureRows)}
+          >
+            <Icon.retry /> Search again for {unsureRows.length} unsure
+          </button>
+        )}
         {layout === "table" && (
           <div className="syt-seg">
             {FILTERS.map(([id, label]) => (

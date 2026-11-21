@@ -14,7 +14,8 @@ export type ReviewActions = {
   toggleSkip(row: Row): void;
   /** Change the pick without accepting it yet. */
   pick(row: Row, track: YoutubeTrack): void;
-  rematch(row: Row): void;
+  /** Run the YouTube searches for this track again. */
+  searchAgain(row: Row): void;
 };
 
 export function TrackCell({

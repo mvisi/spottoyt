@@ -108,7 +108,7 @@ function FocusCard({ row, actions }: { row: Row; actions: ReviewActions }) {
           <button
             type="button"
             className="syt-link"
-            onClick={() => actions.rematch(row)}
+            onClick={() => actions.searchAgain(row)}
           >
             Try again
           </button>
@@ -160,6 +160,14 @@ function FocusCard({ row, actions }: { row: Row; actions: ReviewActions }) {
             <Icon.external /> Open pick on YouTube Music
           </a>
         )}
+        <button
+          type="button"
+          className="syt-ghost"
+          title="YouTube's results change over time"
+          onClick={() => actions.searchAgain(row)}
+        >
+          <Icon.retry /> Search again
+        </button>
         <span className="syt-keys">
           <kbd>1</kbd>–<kbd>6</kbd> pick <kbd>Enter</kbd> use <kbd>s</kbd> skip{" "}
           <kbd>j</kbd>/<kbd>k</kbd> move

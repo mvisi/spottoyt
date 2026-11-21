@@ -141,14 +141,28 @@ describe("matchTrack", () => {
     expect(searches).toEqual([]);
   });
 
-  test("fresh ignores the cache", async () => {
-    results["song|Nightcall Kavinsky"] = [exact];
+  test("fresh runs every search again and keeps earlier results", async () => {
+    results["song|Nightcall Kavinsky"] = [live];
     await matchTrack(nightcall, deps());
     searches = [];
+    // YouTube now returns something else for the same search.
+    results["song|Nightcall Kavinsky"] = [exact];
 
-    await matchTrack(nightcall, deps(), { fresh: true });
+    const again = await matchTrack(nightcall, deps(), { fresh: true });
 
-    expect(searches).toHaveLength(1);
+    expect(searches.map((s) => s.kind)).toEqual(["song", "video"]);
+    expect(again.selectedVideoId).toBe("exact");
+    expect(again.candidates.map((c) => c.videoId)).toContain("live");
+  });
+
+  test("fresh still respects a manual pick", async () => {
+    store.setManual(nightcall.uri, live);
+    results["song|Nightcall Kavinsky"] = [exact];
+
+    const match = await matchTrack(nightcall, deps(), { fresh: true });
+
+    expect(match).toMatchObject({ source: "manual", selectedVideoId: "live" });
+    expect(match.candidates.map((c) => c.videoId)).toContain("exact");
   });
 
   test("continues only the searches a weaker cache didn't run", async () => {
