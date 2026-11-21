@@ -4,6 +4,7 @@ import { helper } from "../helper";
 import type { Playlist } from "../spotify";
 import { Art, Icon, notify } from "../ui";
 import { FocusView } from "./FocusView";
+import { PreviewProvider } from "./Preview";
 import {
   buildRows,
   countRows,
@@ -176,7 +177,7 @@ export function Review({
   const decided = counts.accepted + counts.skipped;
 
   return (
-    <div>
+    <PreviewProvider>
       <div className="syt-hero">
         <Art src={playlist.image} size={160} />
         <div className="syt-t-txt">
@@ -308,6 +309,6 @@ export function Review({
           actions={actions}
         />
       )}
-    </div>
+    </PreviewProvider>
   );
 }

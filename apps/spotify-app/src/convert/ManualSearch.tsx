@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { helper, parseVideoId, youtubeMusicUrl } from "../helper";
 import type { PlaylistTrack } from "../spotify";
 import { Art, formatDuration, Icon } from "../ui";
+import { PreviewButton } from "./Preview";
 
 /** Search YouTube Music yourself, or paste a link, and pick a result. */
 export function ManualSearch({
@@ -103,6 +104,7 @@ export function ManualSearch({
                 {formatDuration(r.durationMs)} vs{" "}
                 {formatDuration(track.durationMs)}
               </span>
+              <PreviewButton track={r} />
               <a
                 className="syt-ic"
                 href={youtubeMusicUrl(r.videoId)}

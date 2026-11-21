@@ -152,7 +152,7 @@ describe("matchTrack", () => {
   });
 
   test("continues only the searches a weaker cache didn't run", async () => {
-    store.saveCandidates(nightcall.uri, {
+    store.saveCandidates(nightcall, {
       candidates: [live],
       searches: ["song|en|Nightcall Kavinsky"],
     });

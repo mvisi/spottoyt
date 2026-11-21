@@ -11,6 +11,7 @@ declare namespace Spicetify {
 
   namespace Player {
     function playUri(uri: string): Promise<void>;
+    function pause(): Promise<void>;
   }
 
   namespace LocalStorage {

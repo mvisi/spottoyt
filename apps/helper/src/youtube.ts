@@ -79,7 +79,9 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
 
   const search = async ({ query, kind, limit, lang }: SearchOptions) => {
     const yt = await innertube(lang);
-    const res = await yt.music.search(query, { type: kind });
+    const res = await retryNetwork(() =>
+      yt.music.search(query, { type: kind }),
+    );
     const items = (res.contents ?? [])
       .flatMap((shelf) =>
         "contents" in shelf && shelf.contents ? [...shelf.contents] : [],
@@ -113,7 +115,8 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
       try {
         // session.logged_in only checks the cookie locally. Fetching the
         // account's playlists proves it actually works.
-        await (await innertube()).getPlaylists();
+        const yt = await innertube();
+        await retryNetwork(() => yt.getPlaylists());
         status.signedIn = true;
       } catch (error) {
         errors.push(`Sign-in failed: ${message(error)}`);
@@ -127,7 +130,9 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
   const video = async (videoId: string) => {
     const yt = await innertube();
     try {
-      const info = await yt.music.getInfo(videoId);
+      // The regular YouTube client, not the Music one: only it returns the
+      // description that tells songs ("Provided to YouTube by …") from videos.
+      const info = await retryNetwork(() => yt.getBasicInfo(videoId));
       return toYoutubeTrackFromInfo(videoId, info.basic_info);
     } catch (error) {
       if (/unavailable|not found/i.test(message(error))) return null;
@@ -222,6 +227,32 @@ export function toYoutubeTrackFromInfo(
     kind: isSong ? "song" : "video",
     thumbnailUrl: thumbnail?.url,
   };
+}
+
+// Errors from the connection itself, e.g. the VPN proxy resetting a socket.
+// These usually succeed on a second try.
+const NETWORK_ERROR =
+  /ECONNRESET|ETIMEDOUT|ECONNREFUSED|EPIPE|socket|Unable to connect|fetch failed|network/i;
+
+export async function retryNetwork<T>(
+  fn: () => Promise<T>,
+  delays = [300, 1000],
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const delay = delays[attempt];
+      const code = (error as { code?: string }).code ?? "";
+      if (
+        delay === undefined ||
+        !NETWORK_ERROR.test(`${code} ${message(error)}`)
+      ) {
+        throw error;
+      }
+      await Bun.sleep(delay);
+    }
+  }
 }
 
 function message(error: unknown) {

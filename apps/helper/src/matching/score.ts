@@ -7,6 +7,7 @@ import type {
   SpotifyTrack,
   YoutubeTrack,
 } from "@spottoyt/shared";
+import { transliterate } from "./transliterate";
 
 // Words that mark a different recording of the same song. A candidate with
 // one the Spotify title lacks (or the other way round) is a worse match.
@@ -68,14 +69,22 @@ export function rankCandidates(
   candidates: YoutubeTrack[],
 ): MatchCandidate[] {
   const seen = new Set<string>();
-  return candidates
-    .filter((c) => !seen.has(c.videoId) && seen.add(c.videoId))
-    .map((candidate, index) => ({
-      ...scoreCandidate(spotify, candidate),
-      index,
-    }))
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .map(({ index: _index, ...candidate }) => candidate);
+  return (
+    candidates
+      .filter((c) => !seen.has(c.videoId) && seen.add(c.videoId))
+      .map((candidate, index) => ({
+        ...scoreCandidate(spotify, candidate),
+        index,
+      }))
+      // On a tie, a proper song upload beats a video.
+      .sort(
+        (a, b) =>
+          b.score - a.score ||
+          Number(b.kind === "song") - Number(a.kind === "song") ||
+          a.index - b.index,
+      )
+      .map(({ index: _index, ...candidate }) => candidate)
+  );
 }
 
 /**
@@ -97,10 +106,29 @@ export function scoreCandidate(
 ): MatchCandidate {
   const reasons: string[] = [];
 
-  const title = titleSimilarity(spotify.title, candidate.title);
-  if (title < 0.9) reasons.push("Different title");
-
   const artist = artistSimilarity(spotify.artists, candidate);
+  const deltaSeconds =
+    candidate.durationMs === undefined
+      ? Number.POSITIVE_INFINITY
+      : Math.abs(candidate.durationMs - spotify.durationMs) / 1000;
+  // Same artist and the same length to the second is strong evidence on its
+  // own, e.g. "yumetourou" on Spotify is "Dream lantern" on YouTube Music.
+  const sameArtistAndLength = artist >= 0.95 && deltaSeconds <= 2;
+
+  const rawTitle = titleSimilarity(spotify.title, candidate.title);
+  let title = rawTitle;
+  // 紅蓮の弓矢 and "Guren no Yumiya" can't be compared without a dictionary,
+  // so don't count that against the candidate.
+  const otherScript =
+    title < 0.9 && scriptsDiffer(spotify.title, candidate.title);
+  if (otherScript) {
+    title = Math.max(title, 0.7);
+    reasons.push("Title in another script");
+  } else if (title < 0.9) {
+    reasons.push("Different title");
+    if (sameArtistAndLength) title = Math.max(title, 0.55);
+  }
+
   if (artist < 0.35) reasons.push("Different artist");
   else if (artist < 0.95) reasons.push("Artists partly match");
 
@@ -122,8 +150,21 @@ export function scoreCandidate(
       ? 1
       : 0;
 
-  const kind = candidate.kind === "song" ? 1 : videoKindScore(candidate.title);
-  if (candidate.kind === "video") reasons.push(videoLabel(candidate.title));
+  // A video uploaded by the artist's own channel is the official one. Often
+  // it's the only upload of a song, or the only one at the right length.
+  const byArtist =
+    candidate.kind === "video" && uploadedByArtist(spotify.artists, candidate);
+  const kind =
+    candidate.kind === "song"
+      ? 1
+      : byArtist
+        ? 0.95
+        : videoKindScore(candidate.title);
+  if (candidate.kind === "video") {
+    reasons.push(
+      byArtist ? "Video by the artist" : videoLabel(candidate.title),
+    );
+  }
 
   let score =
     100 *
@@ -137,10 +178,16 @@ export function scoreCandidate(
     score -= edition.penalty;
     reasons.push(edition.label);
   }
-  if (candidate.kind === "video") score *= videoOriginality(candidate.title);
+  if (candidate.kind === "video" && !byArtist) {
+    score *= videoOriginality(candidate.title);
+  }
 
   // A weak title or a stranger's video can't make up for it elsewhere.
-  if (title < 0.55) score = Math.min(score, 55);
+  if (rawTitle < 0.55 && !otherScript) {
+    score = Math.min(score, sameArtistAndLength ? 75 : 55);
+  }
+  // Never auto-accept on a title we couldn't actually compare.
+  if (otherScript) score = Math.min(score, 85);
   if (candidate.kind === "video" && artist < 0.35) score = Math.min(score, 84);
 
   if (album && reasons.length === 0) reasons.push("Same album");
@@ -160,6 +207,7 @@ export function normalize(value: string) {
       // Full-width letters and brackets (common in Japanese titles) to normal ones.
       .normalize("NFKC")
       .toLowerCase()
+      .replace(/[^\s]+/g, transliterate)
       // Strip accents and other combining marks (é → e, が → か) so both
       // sides compare the same way.
       .normalize("NFKD")
@@ -279,7 +327,33 @@ function nameScore(name: string, haystack: string[]) {
   const meaningful = all.filter((token) => !NAME_FILLER.has(token));
   const nameTokens = meaningful.length ? meaningful : all;
   if (!nameTokens.length || !haystack.length) return 0;
-  return intersection(nameTokens, haystack) / nameTokens.length;
+  // キタニタツヤ becomes one word, "kitanitatsuya", which contains both
+  // "tatsuya" and "kitani". Same for channel names like "georgemichaelvevo".
+  const set = new Set(haystack);
+  const joined = haystack.join("");
+  const found = nameTokens.filter(
+    (t) => set.has(t) || (t.length >= 3 && joined.includes(t)),
+  ).length;
+  return found / nameTokens.length;
+}
+
+/** True when the uploader, not just the title, is the Spotify artist. */
+function uploadedByArtist(artists: string[], candidate: YoutubeTrack) {
+  const uploader = tokens(candidate.artists.join(" "));
+  return artists.some((name) => nameScore(name, uploader) >= 0.95);
+}
+
+const UNCOMPARABLE_SCRIPT = /[\p{Script=Han}\p{Script=Hangul}]/u;
+
+/**
+ * One title uses kanji or Hangul and the other has none, so there's no
+ * reliable way to compare them.
+ */
+function scriptsDiffer(a: string, b: string) {
+  return (
+    UNCOMPARABLE_SCRIPT.test(baseTitle(a)) !==
+    UNCOMPARABLE_SCRIPT.test(baseTitle(b))
+  );
 }
 
 function durationSimilarity(spotifyMs: number, candidateMs?: number) {

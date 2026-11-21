@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { toYoutubeTrack, toYoutubeTrackFromInfo } from "./youtube";
+import {
+  retryNetwork,
+  toYoutubeTrack,
+  toYoutubeTrackFromInfo,
+} from "./youtube";
 
 describe("toYoutubeTrack", () => {
   test("normalizes a song result", () => {
@@ -72,5 +76,31 @@ describe("toYoutubeTrackFromInfo", () => {
         short_description: "Official video",
       }),
     ).toMatchObject({ kind: "video", album: undefined });
+  });
+});
+
+describe("retryNetwork", () => {
+  test("retries connection errors, then succeeds", async () => {
+    let calls = 0;
+    const result = await retryNetwork(async () => {
+      calls++;
+      if (calls < 3)
+        throw Object.assign(new Error("socket closed"), { code: "ECONNRESET" });
+      return "ok";
+    }, [0, 0]);
+
+    expect(result).toBe("ok");
+    expect(calls).toBe(3);
+  });
+
+  test("doesn't retry other errors", async () => {
+    let calls = 0;
+    const failing = retryNetwork(async () => {
+      calls++;
+      throw new Error("This video is unavailable");
+    }, [0, 0]);
+
+    await expect(failing).rejects.toThrow("unavailable");
+    expect(calls).toBe(1);
   });
 });

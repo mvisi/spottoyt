@@ -119,7 +119,7 @@ export async function matchTrack(
   }
 
   if (searched) {
-    deps.store.saveCandidates(track.uri, {
+    deps.store.saveCandidates(track, {
       candidates: dedupe(candidates),
       searches: [...searches],
     });

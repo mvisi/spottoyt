@@ -21,6 +21,8 @@ const migrations: string[] = [
      track TEXT NOT NULL,
      picked_at TEXT NOT NULL
    );`,
+  // The Spotify side of each cached search, for analyzing matches later.
+  "ALTER TABLE track_candidates ADD COLUMN spotify_track TEXT;",
 ];
 
 export type Db = Database;

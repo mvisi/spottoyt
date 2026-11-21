@@ -2,6 +2,7 @@ import type { MatchCandidate, YoutubeTrack } from "@spottoyt/shared";
 import { youtubeMusicUrl } from "../helper";
 import type { PlaylistTrack } from "../spotify";
 import { Art, formatDuration, Icon } from "../ui";
+import { PreviewButton } from "./Preview";
 import type { Row } from "./reviewState";
 
 export type ReviewActions = {
@@ -143,6 +144,7 @@ export function CandidateLine({
         </span>
         <span className="syt-score">{candidate.score}</span>
       </button>
+      <PreviewButton track={candidate} />
       <a
         className="syt-ic"
         href={youtubeMusicUrl(candidate.videoId)}

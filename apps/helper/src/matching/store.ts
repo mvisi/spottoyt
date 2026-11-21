@@ -1,4 +1,4 @@
-import type { YoutubeTrack } from "@spottoyt/shared";
+import type { SpotifyTrack, YoutubeTrack } from "@spottoyt/shared";
 import type { Db } from "../db";
 
 export type CachedCandidates = {
@@ -9,7 +9,7 @@ export type CachedCandidates = {
 
 export type MatchStore = {
   getCandidates(spotifyUri: string): CachedCandidates | null;
-  saveCandidates(spotifyUri: string, cached: CachedCandidates): void;
+  saveCandidates(spotify: SpotifyTrack, cached: CachedCandidates): void;
   getManual(spotifyUri: string): YoutubeTrack | null;
   setManual(spotifyUri: string, track: YoutubeTrack): void;
   clearManual(spotifyUri: string): void;
@@ -23,9 +23,10 @@ export function createMatchStore(db: Db): MatchStore {
     "SELECT candidates, searches FROM track_candidates WHERE spotify_uri = $uri",
   );
   const saveCandidates = db.query(
-    `INSERT INTO track_candidates (spotify_uri, candidates, searches, searched_at)
-     VALUES ($uri, $candidates, $searches, $at)
+    `INSERT INTO track_candidates (spotify_uri, spotify_track, candidates, searches, searched_at)
+     VALUES ($uri, $spotify, $candidates, $searches, $at)
      ON CONFLICT (spotify_uri) DO UPDATE SET
+       spotify_track = excluded.spotify_track,
        candidates = excluded.candidates,
        searches = excluded.searches,
        searched_at = excluded.searched_at`,
@@ -54,9 +55,10 @@ export function createMatchStore(db: Db): MatchStore {
           }
         : null;
     },
-    saveCandidates(uri, cached) {
+    saveCandidates(spotify, cached) {
       saveCandidates.run({
-        uri,
+        uri: spotify.uri,
+        spotify: JSON.stringify(spotify),
         candidates: JSON.stringify(cached.candidates),
         searches: JSON.stringify(cached.searches),
         at: new Date().toISOString(),
