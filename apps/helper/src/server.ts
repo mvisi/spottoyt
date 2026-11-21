@@ -1,5 +1,6 @@
 import type {
   AddTracksResponse,
+  CheckAddedResponse,
   ErrorResponse,
   HealthResponse,
   MatchJob,
@@ -16,6 +17,7 @@ import { z } from "zod";
 import { describeError, log } from "./log";
 import type { MatchJobs } from "./matching/jobs";
 import { languageForText } from "./matching/language";
+import { scoreCandidate } from "./matching/score";
 import type { MatchStore } from "./matching/store";
 import type { PlaylistStore } from "./playlists/store";
 import { type SettingsStore, settingsPatchSchema } from "./settings";
@@ -110,6 +112,15 @@ const addTracksSchema = z.object({
     .min(1)
     .max(200),
 });
+
+const replaceTrackSchema = z.object({ track: youtubeTrackSchema });
+
+const checkAddedSchema = z.object({
+  tracks: z.array(spotifyTrackSchema).max(10_000),
+});
+
+/** Added tracks scoring under this get flagged for a second look. */
+const SUSPECT_BELOW = 75;
 
 const jobQuerySchema = z.object({
   since: z.coerce.number().int().nonnegative().default(0),
@@ -293,6 +304,69 @@ export function createHandler(deps: Deps) {
       }
       const tracks = deps.playlists.markAdded(uri, fresh);
       return json<AddTracksResponse>({ tracks, link: linkOr404(uri) });
+    }),
+
+    // The one removal SpottoYT makes on YouTube, and only when you ask: swap
+    // an added track's video for a better one, in the same position.
+    route(
+      "POST",
+      "/playlists/:uri/tracks/:track/replace",
+      async (req, _url, { uri = "", track: trackUri = "" }) => {
+        const link = linkOr404(uri);
+        const body = parse(replaceTrackSchema, await readJson(req));
+        const tracks = deps.playlists.state(uri).tracks;
+        const current = tracks[trackUri];
+        if (current?.state !== "added") {
+          throw new HttpError(
+            409,
+            "Only tracks already on YouTube can be replaced",
+          );
+        }
+        const oldId = current.track.videoId;
+        if (oldId !== body.track.videoId) {
+          // Two Spotify tracks can share a video. Don't pull it from the other.
+          const shared = Object.entries(tracks).some(
+            ([other, s]) =>
+              other !== trackUri &&
+              s.state === "added" &&
+              s.track.videoId === oldId,
+          );
+          await youtubeCall(() =>
+            deps.youtube.replaceInPlaylist(
+              link.youtubePlaylistId,
+              oldId,
+              body.track.videoId,
+              { keepOld: shared },
+            ),
+          );
+        }
+        deps.matches.setManual(trackUri, body.track);
+        const states = deps.playlists.markAdded(uri, [
+          { spotifyUri: trackUri, track: body.track },
+        ]);
+        return json<AddTracksResponse>({
+          tracks: states,
+          link: linkOr404(uri),
+        });
+      },
+    ),
+
+    // Added tracks that today's scoring would reject, e.g. karaoke versions
+    // auto-accepted before it knew to look for them.
+    route("POST", "/playlists/:uri/check", async (req, _url, { uri = "" }) => {
+      const body = parse(checkAddedSchema, await readJson(req));
+      const states = deps.playlists.state(uri).tracks;
+      const suspect: CheckAddedResponse["suspect"] = {};
+      for (const spotify of body.tracks) {
+        const s = states[spotify.uri];
+        if (s?.state !== "added") continue;
+        if (deps.matches.getManual(spotify.uri)?.videoId === s.track.videoId) {
+          continue;
+        }
+        const { score, reasons } = scoreCandidate(spotify, s.track);
+        if (score < SUSPECT_BELOW) suspect[spotify.uri] = { score, reasons };
+      }
+      return json<CheckAddedResponse>({ suspect });
     }),
 
     route("PUT", "/playlists/:uri/skips/:track", (_req, _url, params) => {

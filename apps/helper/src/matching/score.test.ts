@@ -429,3 +429,85 @@ describe("real-world cases", () => {
     expect(result.reasons).toContain("Video by the artist");
   });
 });
+
+describe("karaoke and tribute releases", () => {
+  const rihanna: SpotifyTrack = {
+    uri: "spotify:track:wbyb",
+    title: "Where Have You Been",
+    artists: ["Rihanna"],
+    album: "Talk That Talk",
+    durationMs: 242_000,
+  };
+  const original: YoutubeTrack = {
+    videoId: "orig",
+    title: "Where Have You Been",
+    artists: ["Rihanna"],
+    album: "Talk That Talk (Deluxe)",
+    durationMs: 243_000,
+    kind: "song",
+  };
+
+  test.each([
+    {
+      title: "Where Have You Been (Made Popular By Rihanna) [Vocal Version]",
+      artists: ["Party Tyme Karaoke"],
+      album: "Party Tyme Karaoke - Pop Female Hits 10 (Vocal Versions)",
+    },
+    {
+      title: "Where Have You Been (In The Style Of Rihanna) [Backing Track]",
+      artists: ["Avid Professional"],
+      album: "Super Hits 2012",
+    },
+    {
+      title: "Where Have You Been (Party Tribute to Rihanna)",
+      artists: ["Ultimate Party Jams"],
+      album: "Where Have You Been",
+    },
+  ])("$artists.0 stays below auto-accept and under the original", (over) => {
+    const fake: YoutubeTrack = {
+      ...original,
+      videoId: "fake",
+      ...over,
+      artists: [...over.artists],
+    };
+    const [best, second] = rankCandidates(rihanna, [fake, original]);
+    expect(best?.videoId).toBe("orig");
+    expect(second?.score).toBeLessThan(80);
+    expect(second?.reasons.join(" ")).toMatch(/Karaoke|Cover/);
+  });
+
+  test("a Spotify karaoke track can still match its karaoke upload", () => {
+    const spotify: SpotifyTrack = {
+      ...rihanna,
+      title: "Where Have You Been (Made Popular By Rihanna)",
+      artists: ["Party Tyme Karaoke"],
+      album: "Party Tyme Karaoke - Pop Female Hits 10",
+    };
+    const upload = scoreCandidate(spotify, {
+      ...original,
+      title: "Where Have You Been (Made Popular By Rihanna)",
+      artists: ["Party Tyme Karaoke"],
+      album: "Party Tyme Karaoke - Pop Female Hits 10",
+    });
+    expect(upload.score).toBeGreaterThanOrEqual(90);
+  });
+
+  test("a song credited to someone else can't auto-accept on the title alone", () => {
+    const danza: SpotifyTrack = {
+      uri: "spotify:track:dk",
+      title: "Danza Kuduro",
+      artists: ["Don Omar", "Lucenzo"],
+      durationMs: 199_000,
+    };
+    const scored = scoreCandidate(danza, {
+      videoId: "x",
+      title: "Danza Kuduro ( Don Omar & Lucenzo ) (feat. Anand Clique)",
+      artists: ["Archuleta Maroon"],
+      album: "Nos Inspiren",
+      durationMs: 198_000,
+      kind: "song",
+    });
+    expect(scored.score).toBeLessThanOrEqual(84);
+    expect(scored.reasons).toContain("Artist only named in the title");
+  });
+});

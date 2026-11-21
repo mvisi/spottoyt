@@ -9,8 +9,11 @@ import type {
 import type { PlaylistTrack } from "../spotify";
 
 export type Decision =
-  /** Already on the YouTube playlist. Settled for good. */
-  | { kind: "added"; track: YoutubeTrack }
+  /**
+   * Already on the YouTube playlist. Sync never changes it. `suspect` is set
+   * when today's scoring thinks it's the wrong recording.
+   */
+  | { kind: "added"; track: YoutubeTrack; suspect?: Suspect }
   /** Goes into the YouTube playlist. */
   | { kind: "accepted"; track: YoutubeTrack; by: "auto" | "you" }
   /** Needs your call. `pick` is the current best guess, if any. */
@@ -24,6 +27,8 @@ export type Decision =
 export type Override =
   | { kind: "accepted"; track: YoutubeTrack }
   | { kind: "pending"; pick?: YoutubeTrack };
+
+export type Suspect = { score: number; reasons: string[] };
 
 /** Saved states for a playlist, by Spotify track URI. */
 export type SavedStates = Readonly<Record<string, PlaylistTrackState>>;
@@ -46,8 +51,13 @@ export function decide(
   match?: TrackMatch,
   override?: Override,
   saved?: PlaylistTrackState,
+  suspect?: Suspect,
 ): Decision | undefined {
-  if (saved?.state === "added") return { kind: "added", track: saved.track };
+  if (saved?.state === "added") {
+    return suspect
+      ? { kind: "added", track: saved.track, suspect }
+      : { kind: "added", track: saved.track };
+  }
   if (saved?.state === "skipped") return { kind: "skipped" };
   if (override?.kind === "accepted") return { ...override, by: "you" };
   if (override) return override;
@@ -69,13 +79,19 @@ export function buildRows(
   matches: ReadonlyMap<string, TrackMatch>,
   overrides: ReadonlyMap<string, Override>,
   saved: SavedStates = {},
+  suspects: Readonly<Record<string, Suspect>> = {},
 ): Row[] {
   return tracks.map((track) => {
     const match = matches.get(track.uri);
     return {
       track,
       match,
-      decision: decide(match, overrides.get(track.uri), saved[track.uri]),
+      decision: decide(
+        match,
+        overrides.get(track.uri),
+        saved[track.uri],
+        suspects[track.uri],
+      ),
     };
   });
 }
@@ -95,7 +111,14 @@ export const needsReview = (row: Row) =>
   row.match.status !== "matched" &&
   row.decision?.kind !== "added";
 
-export type Filter = "all" | "new" | "review" | "auto" | "skipped" | "added";
+export type Filter =
+  | "all"
+  | "new"
+  | "review"
+  | "auto"
+  | "skipped"
+  | "added"
+  | "suspect";
 
 export function filterRows(rows: Row[], filter: Filter): Row[] {
   switch (filter) {
@@ -105,6 +128,10 @@ export function filterRows(rows: Row[], filter: Filter): Row[] {
       return rows.filter((r) => r.decision?.kind !== "added");
     case "added":
       return rows.filter((r) => r.decision?.kind === "added");
+    case "suspect":
+      return rows.filter(
+        (r) => r.decision?.kind === "added" && r.decision.suspect,
+      );
     case "review":
       return rows.filter(needsReview);
     case "auto":
@@ -118,6 +145,8 @@ export type Counts = {
   total: number;
   /** Already on the YouTube playlist. */
   added: number;
+  /** Added, but looks like the wrong recording now. */
+  suspect: number;
   accepted: number;
   skipped: number;
   /** Matched, but still waiting for your call. */
@@ -130,6 +159,7 @@ export function countRows(rows: Row[]): Counts {
   const counts: Counts = {
     total: rows.length,
     added: 0,
+    suspect: 0,
     accepted: 0,
     skipped: 0,
     open: 0,
@@ -137,8 +167,10 @@ export function countRows(rows: Row[]): Counts {
   };
   for (const { decision } of rows) {
     if (!decision) counts.matching++;
-    else if (decision.kind === "added") counts.added++;
-    else if (decision.kind === "accepted") counts.accepted++;
+    else if (decision.kind === "added") {
+      counts.added++;
+      if (decision.suspect) counts.suspect++;
+    } else if (decision.kind === "accepted") counts.accepted++;
     else if (decision.kind === "skipped") counts.skipped++;
     else counts.open++;
   }

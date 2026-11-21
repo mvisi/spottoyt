@@ -1,5 +1,6 @@
 import {
   type AddTracksResponse,
+  type CheckAddedResponse,
   DEFAULT_HELPER_URL,
   type ErrorResponse,
   type HealthResponse,
@@ -96,6 +97,17 @@ export const helper = {
     request<void>(`/playlists/${enc(uri)}/skips/${enc(trackUri)}`, {
       method: skipped ? "PUT" : "DELETE",
     }),
+  /** Swaps an added track's video, in place. The only removal on YouTube. */
+  replaceTrack: (uri: string, trackUri: string, track: YoutubeTrack) =>
+    request<AddTracksResponse>(
+      `/playlists/${enc(uri)}/tracks/${enc(trackUri)}/replace`,
+      body({ track }),
+    ),
+  checkAdded: (uri: string, tracks: SpotifyTrack[]) =>
+    request<CheckAddedResponse>(
+      `/playlists/${enc(uri)}/check`,
+      body({ tracks }),
+    ),
   youtubeDiff: (uri: string) =>
     request<YoutubeDiff>(`/playlists/${enc(uri)}/youtube`),
 };

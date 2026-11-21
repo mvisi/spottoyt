@@ -20,6 +20,7 @@ import {
   type Override,
   type Row,
   type SavedStates,
+  type Suspect,
   tracksToAdd,
 } from "./reviewState";
 import type { ReviewActions } from "./shared";
@@ -40,6 +41,7 @@ const LINKED_FILTERS: Array<[Filter, string]> = [
   ["review", "Needs review"],
   ["skipped", "Skipped"],
   ["added", "On YouTube"],
+  ["suspect", "Looks wrong"],
   ["all", "All"],
 ];
 
@@ -65,6 +67,21 @@ export function Review({
     null,
   );
   const [diffVersion, setDiffVersion] = useState(0);
+  const [suspects, setSuspects] = useState<Readonly<Record<string, Suspect>>>(
+    {},
+  );
+
+  // Rechecks what's on YouTube with today's scoring, so bad versions added
+  // earlier (e.g. karaoke) can be found and replaced.
+  const checkAdded = useCallback(() => {
+    helper
+      .checkAdded(playlist.uri, playlist.tracks)
+      .then((res) => setSuspects(res.suspect))
+      .catch(() => {});
+  }, [playlist.uri, playlist.tracks]);
+  useEffect(() => {
+    if (initial.link) checkAdded();
+  }, [initial.link, checkAdded]);
 
   // Tracks already on YouTube are settled, so only the rest get matched.
   const toMatch = useMemo(
@@ -84,8 +101,8 @@ export function Review({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
 
   const rows = useMemo(
-    () => buildRows(playlist.tracks, matches, overrides, saved),
-    [playlist.tracks, matches, overrides, saved],
+    () => buildRows(playlist.tracks, matches, overrides, saved, suspects),
+    [playlist.tracks, matches, overrides, saved, suspects],
   );
   const counts = countRows(rows);
   const list = useMemo(
@@ -184,6 +201,30 @@ export function Review({
     searchAgain(row) {
       if (settled(row)) return;
       searchAgain([row]);
+    },
+    async replace(row, track) {
+      try {
+        const res = await helper.replaceTrack(
+          playlist.uri,
+          row.track.uri,
+          track,
+        );
+        setSaved((prev) => ({ ...prev, ...res.tracks }));
+        setLink(res.link);
+        setSuspects((prev) => {
+          const next = { ...prev };
+          delete next[row.track.uri];
+          return next;
+        });
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          next.delete(row.track.uri);
+          return next;
+        });
+        notify(`Replaced “${row.track.title}” on YouTube Music`);
+      } catch (e) {
+        notify(`Couldn't replace it: ${(e as Error).message}`, true);
+      }
     },
   };
 
@@ -336,6 +377,20 @@ export function Review({
                 <b>{counts.added}</b> on YouTube
               </span>
             )}
+            {counts.suspect > 0 && (
+              <button
+                type="button"
+                className="syt-link syt-warn-text"
+                title="Added before, but today's matching thinks they're the wrong version"
+                onClick={() => {
+                  setFilter("suspect");
+                  setSelected(0);
+                  setLayout("table");
+                }}
+              >
+                <b>{counts.suspect}</b> look wrong
+              </button>
+            )}
             <span>
               <b>{counts.accepted}</b> {link ? "ready to add" : "matched"}
             </span>
@@ -473,7 +528,12 @@ export function Review({
         )}
         {layout === "table" && (
           <div className="syt-seg">
-            {(link ? LINKED_FILTERS : FILTERS).map(([id, label]) => (
+            {(link
+              ? LINKED_FILTERS.filter(
+                  ([id]) => id !== "suspect" || counts.suspect > 0,
+                )
+              : FILTERS
+            ).map(([id, label]) => (
               <button
                 key={id}
                 type="button"

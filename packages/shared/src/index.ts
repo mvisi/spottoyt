@@ -168,3 +168,25 @@ export type YoutubeDiff = {
   /** Spotify tracks added before but since removed on YouTube. */
   removedOnYoutube: string[];
 };
+
+/**
+ * Swaps an added track's video for `track` on the YouTube playlist, at the
+ * same position. The one removal SpottoYT makes, and only when you ask.
+ */
+export type ReplaceTrackRequest = {
+  track: YoutubeTrack;
+};
+
+/** Rechecks a playlist's added tracks with the current scoring. */
+export type CheckAddedRequest = {
+  /** The playlist's Spotify tracks. Only added ones are checked. */
+  tracks: SpotifyTrack[];
+};
+
+export type CheckAddedResponse = {
+  /**
+   * Added tracks that look like the wrong recording, by Spotify URI. Your
+   * own picks are never listed.
+   */
+  suspect: Record<string, { score: number; reasons: string[] }>;
+};

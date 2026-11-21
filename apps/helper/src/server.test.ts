@@ -61,6 +61,14 @@ beforeEach(() => {
         }
       }
     },
+    async replaceInPlaylist(id, oldId, newId, { keepOld }) {
+      const items = ytPlaylists.get(id);
+      if (!items) throw new Error("Playlist not found");
+      const at = items.findIndex((i) => i.videoId === oldId);
+      const replacement = { ...track, videoId: newId };
+      if (at === -1) items.push(replacement);
+      else items.splice(at, keepOld ? 0 : 1, replacement);
+    },
     async playlistTracks(id) {
       return ytPlaylists.get(id) ?? null;
     },
@@ -354,5 +362,82 @@ describe("linked playlists", () => {
     );
     const state = await (await get(`/playlists/${playlist}`)).json();
     expect(state).toEqual({ link: null, tracks: {} });
+  });
+
+  test("replaces an added track in place, and only when asked", async () => {
+    const replace = (trackUri: string, videoId: string) =>
+      send(
+        "POST",
+        `/playlists/${playlist}/tracks/${encodeURIComponent(trackUri)}/replace`,
+        JSON.stringify({ track: { ...track, videoId } }),
+      );
+    await link();
+    await add(
+      ["spotify:track:1", "v1"],
+      ["spotify:track:2", "karaoke"],
+      ["spotify:track:3", "v3"],
+      // The same video for two Spotify tracks (a duplicate in the playlist).
+      ["spotify:track:4", "v1"],
+    );
+
+    expect((await replace("spotify:track:9", "x")).status).toBe(409);
+
+    expect((await replace("spotify:track:2", "real")).status).toBe(200);
+    expect(ytPlaylists.get("PL1")?.map((t) => t.videoId)).toEqual([
+      "v1",
+      "real",
+      "v3",
+    ]);
+    const state = await (await get(`/playlists/${playlist}`)).json();
+    expect(state.tracks["spotify:track:2"].track.videoId).toBe("real");
+    expect(matches.getManual("spotify:track:2")?.videoId).toBe("real");
+
+    // v1 is still used by track 4, so it stays.
+    await replace("spotify:track:1", "better");
+    expect(ytPlaylists.get("PL1")?.map((t) => t.videoId)).toEqual([
+      "better",
+      "v1",
+      "real",
+      "v3",
+    ]);
+  });
+
+  test("flags added tracks that look wrong, except your own picks", async () => {
+    const spotify = (n: number) => ({
+      uri: `spotify:track:${n}`,
+      title: "Nightcall",
+      artists: ["Kavinsky"],
+      durationMs: 258_000,
+    });
+    await link();
+    await send(
+      "POST",
+      `/playlists/${playlist}/tracks`,
+      JSON.stringify({
+        tracks: [1, 2, 3].map((n) => ({
+          spotifyUri: `spotify:track:${n}`,
+          track: {
+            ...track,
+            videoId: `v${n}`,
+            title: n === 1 ? "Nightcall" : "Nightcall (Karaoke Version)",
+          },
+        })),
+      }),
+    );
+    // You picked the karaoke version for track 3 yourself.
+    matches.setManual("spotify:track:3", {
+      ...track,
+      videoId: "v3",
+      title: "Nightcall (Karaoke Version)",
+    });
+
+    const res = await send(
+      "POST",
+      `/playlists/${playlist}/check`,
+      JSON.stringify({ tracks: [1, 2, 3].map(spotify) }),
+    );
+    const { suspect } = await res.json();
+    expect(Object.keys(suspect)).toEqual(["spotify:track:2"]);
+    expect(suspect["spotify:track:2"].reasons).toContain("Karaoke");
   });
 });

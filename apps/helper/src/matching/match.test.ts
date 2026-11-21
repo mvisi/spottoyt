@@ -89,6 +89,7 @@ describe("matchTrack", () => {
     },
     createPlaylist: unused,
     addToPlaylist: unused,
+    replaceInPlaylist: unused,
     playlistTracks: unused,
   };
   const deps = () => ({

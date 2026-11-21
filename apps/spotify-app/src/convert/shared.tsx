@@ -16,6 +16,8 @@ export type ReviewActions = {
   pick(row: Row, track: YoutubeTrack): void;
   /** Run the YouTube searches for this track again. */
   searchAgain(row: Row): void;
+  /** Swap an added track's video on YouTube for `track`. */
+  replace(row: Row, track: YoutubeTrack): Promise<void>;
 };
 
 export function TrackCell({
@@ -60,6 +62,16 @@ export function YoutubeCell({ track }: { track: YoutubeTrack }) {
 /** One line of status for the Match column. */
 export function MatchStatus({ row }: { row: Row }) {
   const { match, decision } = row;
+  if (decision?.kind === "added" && decision.suspect)
+    return (
+      <span
+        className="syt-dot warn"
+        title={`Scores ${decision.suspect.score} now: ${decision.suspect.reasons.join(", ")}. Expand to replace it.`}
+      >
+        <i />
+        Looks wrong · {decision.suspect.score}
+      </span>
+    );
   if (decision?.kind === "added")
     return (
       <span className="syt-dot ok">

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { playOnSpotify } from "../spotify";
 import { Icon } from "../ui";
 import { ManualSearch } from "./ManualSearch";
+import { ReplacePanel } from "./ReplacePanel";
 import type { Row } from "./reviewState";
 import {
   CandidateLine,
@@ -106,11 +107,15 @@ export function TableView({
                     <Icon.retry />
                   </button>
                 )}
-                {match && !settled && (
+                {(match || settled) && (
                   <button
                     type="button"
                     className="syt-ic"
-                    title="Alternatives and search (Enter)"
+                    title={
+                      settled
+                        ? "Replace with another version (Enter)"
+                        : "Alternatives and search (Enter)"
+                    }
                     onClick={(e) => {
                       e.stopPropagation();
                       onToggleExpanded(track.uri);
@@ -149,6 +154,13 @@ export function TableView({
                 </button>
               </div>
             </div>
+            {open && settled && shown && (
+              <ReplacePanel
+                track={track}
+                current={shown}
+                onReplace={(replacement) => actions.replace(row, replacement)}
+              />
+            )}
             {open && match && !settled && (
               <div className="syt-alts">
                 {match.candidates.map((c, k) => (

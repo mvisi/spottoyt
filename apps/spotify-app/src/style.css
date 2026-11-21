@@ -726,3 +726,20 @@ button.syt-dot:hover {
   align-items: center;
   gap: 8px;
 }
+
+/* ---------- Replacing added tracks ---------- */
+.syt .syt-warn-text {
+  color: var(--syt-warn);
+}
+.syt-replace {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--syt-card);
+}
+.syt-replace-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

@@ -35,6 +35,17 @@ export type YoutubeClient = {
   createPlaylist(title: string, description: string): Promise<string>;
   /** Appends videos. YouTube ignores ones already in the playlist. */
   addToPlaylist(playlistId: string, videoIds: string[]): Promise<void>;
+  /**
+   * Puts `newVideoId` where `oldVideoId` is and removes the old one. Adds at
+   * the end if the old one is gone already. Keeps the old one if
+   * `keepOld`, e.g. when another track in the playlist uses it too.
+   */
+  replaceInPlaylist(
+    playlistId: string,
+    oldVideoId: string,
+    newVideoId: string,
+    options: { keepOld: boolean },
+  ): Promise<void>;
   /** Everything in the playlist, or null if it no longer exists. */
   playlistTracks(playlistId: string): Promise<YoutubeTrack[] | null>;
 };
@@ -224,6 +235,44 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
     });
   };
 
+  const replaceInPlaylist = async (
+    playlistId: string,
+    oldVideoId: string,
+    newVideoId: string,
+    { keepOld }: { keepOld: boolean },
+  ) => {
+    const yt = await innertube();
+    const current = await playlistTracks(playlistId);
+    if (!current) throw new Error("The YouTube Music playlist is gone");
+    const oldThere = current.some((t) => t.videoId === oldVideoId);
+
+    await retryNetwork(() => yt.playlist.addVideos(playlistId, [newVideoId]));
+    if (oldThere) {
+      // Position is nice to have. A failed move leaves it at the end.
+      try {
+        await retryNetwork(() =>
+          yt.playlist.moveVideo(playlistId, newVideoId, oldVideoId),
+        );
+      } catch (error) {
+        log.warn("Couldn't move the replacement into place", {
+          id: playlistId,
+          ...describeError(error),
+        });
+      }
+      if (!keepOld) {
+        await retryNetwork(() =>
+          yt.playlist.removeVideos(playlistId, [oldVideoId]),
+        );
+      }
+    }
+    log.info("Replaced a video in a YouTube playlist", {
+      id: playlistId,
+      old: oldVideoId,
+      new: newVideoId,
+      removedOld: oldThere && !keepOld,
+    });
+  };
+
   const playlistTracks = async (playlistId: string) => {
     const yt = await innertube();
     let page: Awaited<ReturnType<typeof yt.music.getPlaylist>>;
@@ -275,6 +324,7 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
     video,
     createPlaylist,
     addToPlaylist,
+    replaceInPlaylist,
     playlistTracks,
     async status({ refresh = false } = {}) {
       if (

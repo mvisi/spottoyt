@@ -44,6 +44,18 @@ const EDITION_LABELS: Record<string, string> = {
   reverb: "Reverb edit",
 };
 
+// Phrases that mark karaoke and tribute releases without saying so in one
+// word, e.g. "Where Have You Been (Made Popular By Rihanna)". Matched on
+// normalized text and counted as the edition word they stand for.
+const EDITION_PHRASES: Array<[RegExp, string]> = [
+  [
+    /\b(made (popular|famous)|in the style|originally (performed|by)|as performed by)\b/,
+    "karaoke",
+  ],
+  [/\b(backing (track|version)|sing along|singalong)\b/, "karaoke"],
+  [/\btribute\b/, "cover"],
+];
+
 // Words in video titles that don't change which song it is.
 const VIDEO_NOISE = new Set([
   "official",
@@ -129,7 +141,16 @@ export function scoreCandidate(
     if (sameArtistAndLength) title = Math.max(title, 0.55);
   }
 
+  // Songs credit their artists properly. One credited to someone else is a
+  // different recording, even when the title names the right artist, e.g.
+  // "Danza Kuduro (Don Omar & Lucenzo)" by "Archuleta Maroon".
+  const titleOnlyArtist =
+    candidate.kind === "song" &&
+    artist >= 0.35 &&
+    artistSimilarity(spotify.artists, { ...candidate, title: "" }) < 0.35;
+
   if (artist < 0.35) reasons.push("Different artist");
+  else if (titleOnlyArtist) reasons.push("Artist only named in the title");
   else if (artist < 0.95) reasons.push("Artists partly match");
 
   const duration = durationSimilarity(spotify.durationMs, candidate.durationMs);
@@ -174,7 +195,7 @@ export function scoreCandidate(
       kind * 0.06 +
       album * 0.04);
 
-  for (const edition of editionDifferences(spotify.title, candidate.title)) {
+  for (const edition of editionDifferences(spotify, candidate)) {
     score -= edition.penalty;
     reasons.push(edition.label);
   }
@@ -189,6 +210,7 @@ export function scoreCandidate(
   // Never auto-accept on a title we couldn't actually compare.
   if (otherScript) score = Math.min(score, 85);
   if (candidate.kind === "video" && artist < 0.35) score = Math.min(score, 84);
+  if (titleOnlyArtist) score = Math.min(score, 84);
 
   if (album && reasons.length === 0) reasons.push("Same album");
 
@@ -367,14 +389,35 @@ function durationSimilarity(spotifyMs: number, candidateMs?: number) {
   return 0;
 }
 
-function editionDifferences(spotifyTitle: string, candidateTitle: string) {
-  const mine = new Set(tokens(spotifyTitle));
-  const theirs = new Set(tokens(candidateTitle));
+/** Edition words in `text`, including ones implied by EDITION_PHRASES. */
+function editionWords(text: string) {
+  const words = new Set(tokens(text));
+  const normalized = normalize(text);
+  for (const [pattern, word] of EDITION_PHRASES) {
+    if (pattern.test(normalized)) words.add(word);
+  }
+  return words;
+}
+
+/**
+ * Different recordings of the song. Edition words count anywhere in the
+ * candidate, including its artist and album ("Party Tyme Karaoke"). For
+ * "not the live version", only the Spotify title counts: an album name
+ * alone isn't reliable enough to penalize a candidate for lacking it.
+ */
+function editionDifferences(spotify: SpotifyTrack, candidate: YoutubeTrack) {
+  const mine = editionWords(spotify.title);
+  const mineAnywhere = editionWords(
+    [spotify.title, spotify.album, ...spotify.artists].join(" "),
+  );
+  const theirs = editionWords(
+    [candidate.title, candidate.album, ...candidate.artists].join(" "),
+  );
   const out: Array<{ penalty: number; label: string }> = [];
 
   for (const [word, penalty] of Object.entries(EDITION_PENALTIES)) {
     const label = EDITION_LABELS[word] ?? word;
-    if (theirs.has(word) && !mine.has(word)) {
+    if (theirs.has(word) && !mineAnywhere.has(word)) {
       out.push({ penalty: penalty.extra, label });
     } else if (mine.has(word) && !theirs.has(word)) {
       out.push({

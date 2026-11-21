@@ -106,6 +106,7 @@ describe("rows", () => {
       total: 4,
       accepted: 1,
       added: 0,
+      suspect: 0,
       skipped: 0,
       open: 2,
       matching: 1,
