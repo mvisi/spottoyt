@@ -362,7 +362,8 @@ export function Review({
         </div>
       </div>
 
-      {link && (
+      {/* Compared after adding finishes, not against a half-filled playlist. */}
+      {link && !adding && (
         <YoutubeDiffPanel
           playlistUri={playlist.uri}
           version={diffVersion}

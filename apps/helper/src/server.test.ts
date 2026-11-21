@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import type { YoutubeStatus, YoutubeTrack } from "@spottoyt/shared";
 import { openDatabase } from "./db";
 import { createMatchJobs } from "./matching/jobs";
@@ -101,6 +101,7 @@ describe("basics", () => {
 
     expect(await res.json()).toEqual({ ok: true, version: "1.2.3" });
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
   test("answers preflight requests", async () => {
@@ -322,7 +323,13 @@ describe("linked playlists", () => {
       { ...track, videoId: "mine" },
     ]);
 
-    const diff = await (await get(`/playlists/${playlist}/youtube`)).json();
+    // Fresh adds may not show on YouTube yet, so they're never "removed".
+    let diff = await (await get(`/playlists/${playlist}/youtube`)).json();
+    expect(diff.removedOnYoutube).toEqual([]);
+
+    setSystemTime(new Date(Date.now() + 5 * 60 * 1000));
+    diff = await (await get(`/playlists/${playlist}/youtube`)).json();
+    setSystemTime();
     expect(diff.onlyOnYoutube.map((t: YoutubeTrack) => t.videoId)).toEqual([
       "mine",
     ]);

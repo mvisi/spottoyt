@@ -38,6 +38,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Allow-Private-Network": "true",
+  // Spotify's browser may cache some responses, like a 410, otherwise.
+  "Cache-Control": "no-store",
 };
 
 class HttpError extends Error {
@@ -48,6 +50,12 @@ class HttpError extends Error {
     super(message);
   }
 }
+
+/**
+ * YouTube can take a few seconds to show tracks just added, so recent adds
+ * aren't reported as removed.
+ */
+const RECENT_ADD_MS = 2 * 60 * 1000;
 
 // ---------- Request schemas ----------
 
@@ -314,7 +322,7 @@ export function createHandler(deps: Deps) {
         const added = Object.entries(deps.playlists.state(uri).tracks).flatMap(
           ([spotifyUri, s]) =>
             s.state === "added"
-              ? [{ spotifyUri, videoId: s.track.videoId }]
+              ? [{ spotifyUri, videoId: s.track.videoId, at: s.at }]
               : [],
         );
         const addedIds = new Set(added.map((a) => a.videoId));
@@ -322,7 +330,11 @@ export function createHandler(deps: Deps) {
         return json<YoutubeDiff>({
           onlyOnYoutube: items.filter((i) => !addedIds.has(i.videoId)),
           removedOnYoutube: added
-            .filter((a) => !onYoutube.has(a.videoId))
+            .filter(
+              (a) =>
+                !onYoutube.has(a.videoId) &&
+                Date.now() - Date.parse(a.at) > RECENT_ADD_MS,
+            )
             .map((a) => a.spotifyUri),
         });
       },

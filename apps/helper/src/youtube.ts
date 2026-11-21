@@ -235,9 +235,17 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
       }
       throw error;
     }
-    // A deleted playlist comes back empty instead of failing. Real ones,
-    // even empty, always have a header with their title.
-    if (!page.header) return null;
+    // The Music client returns deleted and new empty playlists alike: no
+    // header, no items. The regular client tells them apart.
+    if (!page.header) {
+      try {
+        await retryNetwork(() => yt.getPlaylist(playlistId));
+        return [];
+      } catch (error) {
+        if (/does not exist|not found|404/i.test(message(error))) return null;
+        throw error;
+      }
+    }
     const tracks: YoutubeTrack[] = [];
     for (let pages = 1; ; pages++) {
       for (const item of page.items) {
