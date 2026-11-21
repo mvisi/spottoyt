@@ -41,7 +41,7 @@ describe("searchTitle", () => {
 });
 
 describe("planSearches", () => {
-  test("Latin tracks: songs by all artists, primary artist, then videos", () => {
+  test("Latin tracks: several song phrasings, then videos", () => {
     const steps = planSearches(
       { ...nightcall, artists: ["Kavinsky", "Lovefoxxx"] },
       defaultSettings,
@@ -49,8 +49,21 @@ describe("planSearches", () => {
 
     expect(steps.map(searchKey)).toEqual([
       "song|en|Nightcall Kavinsky Lovefoxxx",
+      "song|en|Kavinsky Nightcall",
       "song|en|Nightcall Kavinsky",
+      "song|en|Nightcall Kavinsky OutRun",
       "video|en|Nightcall Kavinsky",
+    ]);
+  });
+
+  test("leaves out the album when it's the title, and edition noise", () => {
+    const steps = planSearches(
+      { ...nightcall, album: "Nightcall (Deluxe Edition)" },
+      { ...defaultSettings, includeVideos: false },
+    );
+    expect(steps.map(searchKey)).toEqual([
+      "song|en|Nightcall Kavinsky",
+      "song|en|Kavinsky Nightcall",
     ]);
   });
 
@@ -62,6 +75,8 @@ describe("planSearches", () => {
 
     expect(steps.map(searchKey)).toEqual([
       "song|ja|Lemon 米津玄師",
+      "song|ja|米津玄師 Lemon",
+      "song|ja|Lemon 米津玄師 OutRun",
       "song|en|Lemon 米津玄師",
     ]);
   });
@@ -129,7 +144,12 @@ describe("matchTrack", () => {
       source: "suggested",
       selectedVideoId: "live",
     });
-    expect(searches.map((s) => s.kind)).toEqual(["song", "video"]);
+    expect(searches.map((s) => `${s.kind}|${s.query}`)).toEqual([
+      "song|Nightcall Kavinsky",
+      "song|Kavinsky Nightcall",
+      "song|Nightcall Kavinsky OutRun",
+      "video|Nightcall Kavinsky",
+    ]);
   });
 
   test("reports not found when every search is empty", async () => {
@@ -158,7 +178,12 @@ describe("matchTrack", () => {
 
     const again = await matchTrack(nightcall, deps(), { fresh: true });
 
-    expect(searches.map((s) => s.kind)).toEqual(["song", "video"]);
+    expect(searches.map((s) => s.kind)).toEqual([
+      "song",
+      "song",
+      "song",
+      "video",
+    ]);
     expect(again.selectedVideoId).toBe("exact");
     expect(again.candidates.map((c) => c.videoId)).toContain("live");
   });
@@ -190,6 +215,8 @@ describe("matchTrack", () => {
     await matchTrack(nightcall, deps());
 
     expect(searches.map((s) => `${s.kind}|${s.query}`)).toEqual([
+      "song|Kavinsky Nightcall",
+      "song|Nightcall Kavinsky OutRun",
       "video|Nightcall Kavinsky",
     ]);
   });

@@ -28,6 +28,11 @@ export const searchKey = (step: SearchStep) =>
 /**
  * Searches to try, in order. Later steps only run while nothing is
  * confident yet, so most tracks need one search.
+ *
+ * YouTube Music's results for one query vary between requests and often
+ * bury the original under covers, so unsure tracks get several phrasings.
+ * "Katy Perry The One That Got Away" finds the original where "The One That
+ * Got Away Katy Perry" returns only karaoke versions.
  */
 export function planSearches(
   track: SpotifyTrack,
@@ -37,10 +42,15 @@ export function planSearches(
   const lang = searchLanguage(track);
   const [primary = ""] = track.artists;
   const all = track.artists.join(" ");
+  const album = track.album ? searchTitle(track.album) : "";
   const steps: SearchStep[] = [
     { kind: "song", query: `${title} ${all}`, lang },
+    { kind: "song", query: `${primary} ${title}`, lang },
     { kind: "song", query: `${title} ${primary}`, lang },
   ];
+  if (album && album.toLowerCase() !== title.toLowerCase()) {
+    steps.push({ kind: "song", query: `${title} ${primary} ${album}`, lang });
+  }
   // Spotify sometimes shows romanized names for non-Latin artists, which only
   // match YouTube's English-localized results.
   if (lang !== DEFAULT_LANGUAGE) {
@@ -68,7 +78,7 @@ export function searchTitle(title: string) {
   const noise =
     /remaster|feat\.?|ft\.|\bwith\b|\bmono\b|\bstereo\b|bonus track|deluxe/i;
   const keeps =
-    /live|remix|acoustic|unplugged|instrumental|demo|extended|version|edit/i;
+    /\b(live|remix|acoustic|unplugged|instrumental|demo|extended|version|edit)\b/i;
   const drop = (segment: string) => noise.test(segment) && !keeps.test(segment);
 
   return title

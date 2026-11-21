@@ -8,9 +8,12 @@ import { Icon } from "../ui";
 import { ManualSearch } from "./ManualSearch";
 import { CandidateLine, YoutubeCell } from "./shared";
 
-/** Matches one track on its own, without touching the page's match job. */
+/**
+ * Matches one track on its own, without touching the page's match job.
+ * Fresh, so every search phrasing runs: results vary between requests.
+ */
 async function matchOne(track: PlaylistTrack): Promise<MatchCandidate[]> {
-  const job = await helper.startMatchJob([track]);
+  const job = await helper.startMatchJob([track], true);
   for (let i = 0; i < 150; i++) {
     const update = await helper.matchJob(job.id, 0);
     if (update.status !== "running") return update.results[0]?.candidates ?? [];

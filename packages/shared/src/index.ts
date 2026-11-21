@@ -159,6 +159,8 @@ export type AddTracksResponse = {
   /** Updated states for the tracks just added. */
   tracks: Record<string, PlaylistTrackState>;
   link: PlaylistLink;
+  /** Something went partly wrong, e.g. a replaced video couldn't be removed. */
+  warning?: string;
 };
 
 /** How the YouTube playlist differs from what SpottoYT added to it. */

@@ -221,7 +221,8 @@ export function Review({
           next.delete(row.track.uri);
           return next;
         });
-        notify(`Replaced “${row.track.title}” on YouTube Music`);
+        if (res.warning) notify(res.warning, true);
+        else notify(`Replaced “${row.track.title}” on YouTube Music`);
       } catch (e) {
         notify(`Couldn't replace it: ${(e as Error).message}`, true);
       }

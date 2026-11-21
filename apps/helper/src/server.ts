@@ -21,7 +21,7 @@ import { scoreCandidate } from "./matching/score";
 import type { MatchStore } from "./matching/store";
 import type { PlaylistStore } from "./playlists/store";
 import { type SettingsStore, settingsPatchSchema } from "./settings";
-import type { YoutubeClient } from "./youtube";
+import { OldVideoNotRemoved, type YoutubeClient } from "./youtube";
 
 export type Deps = {
   version: string;
@@ -48,8 +48,9 @@ class HttpError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    options?: { cause?: unknown },
   ) {
-    super(message);
+    super(message, options);
   }
 }
 
@@ -323,6 +324,7 @@ export function createHandler(deps: Deps) {
           );
         }
         const oldId = current.track.videoId;
+        let warning: string | undefined;
         if (oldId !== body.track.videoId) {
           // Two Spotify tracks can share a video. Don't pull it from the other.
           const shared = Object.entries(tracks).some(
@@ -331,14 +333,27 @@ export function createHandler(deps: Deps) {
               s.state === "added" &&
               s.track.videoId === oldId,
           );
-          await youtubeCall(() =>
-            deps.youtube.replaceInPlaylist(
-              link.youtubePlaylistId,
-              oldId,
-              body.track.videoId,
-              { keepOld: shared },
-            ),
-          );
+          try {
+            await youtubeCall(() =>
+              deps.youtube.replaceInPlaylist(
+                link.youtubePlaylistId,
+                oldId,
+                body.track.videoId,
+                { keepOld: shared },
+              ),
+            );
+          } catch (error) {
+            // The new video is on the playlist either way, so record it.
+            if (
+              !(
+                error instanceof HttpError &&
+                error.cause instanceof OldVideoNotRemoved
+              )
+            ) {
+              throw error;
+            }
+            warning = `“${current.track.title}” is still on the YouTube playlist. Remove it there by hand.`;
+          }
         }
         deps.matches.setManual(trackUri, body.track);
         const states = deps.playlists.markAdded(uri, [
@@ -347,6 +362,7 @@ export function createHandler(deps: Deps) {
         return json<AddTracksResponse>({
           tracks: states,
           link: linkOr404(uri),
+          ...(warning ? { warning } : {}),
         });
       },
     ),
@@ -475,7 +491,7 @@ async function youtubeCall<T>(fn: () => Promise<T>): Promise<T> {
     if (error instanceof HttpError) throw error;
     log.warn("YouTube Music call failed", describeError(error));
     const reason = error instanceof Error ? error.message : String(error);
-    throw new HttpError(502, `YouTube Music: ${reason}`);
+    throw new HttpError(502, `YouTube Music: ${reason}`, { cause: error });
   }
 }
 

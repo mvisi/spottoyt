@@ -50,6 +50,49 @@ export type YoutubeClient = {
   playlistTracks(playlistId: string): Promise<YoutubeTrack[] | null>;
 };
 
+/**
+ * Thrown when a replacement was added but the old video couldn't be removed,
+ * so callers can still record the new one.
+ */
+export class OldVideoNotRemoved extends Error {}
+
+/**
+ * YouTube rejects overlapping edits to one playlist with 409 Conflict. Runs
+ * edits per playlist one at a time.
+ */
+const playlistLocks = new Map<string, Promise<unknown>>();
+function withPlaylistLock<T>(playlistId: string, fn: () => Promise<T>) {
+  const previous = playlistLocks.get(playlistId) ?? Promise.resolve();
+  const run = previous.catch(() => {}).then(fn);
+  playlistLocks.set(playlistId, run);
+  run
+    .catch(() => {})
+    .finally(() => {
+      if (playlistLocks.get(playlistId) === run)
+        playlistLocks.delete(playlistId);
+    });
+  return run;
+}
+
+/** An edit call, retried on network errors and on 409 Conflict. */
+async function retryEdit<T>(fn: () => Promise<T>): Promise<T> {
+  const delays = [1000, 2500, 5000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await retryNetwork(fn);
+    } catch (error) {
+      const delay = delays[attempt];
+      if (delay === undefined || !/status code 409/.test(message(error))) {
+        throw error;
+      }
+      log.warn(`Playlist edit conflict, retrying in ${delay}ms`, {
+        attempt: attempt + 1,
+      });
+      await Bun.sleep(delay);
+    }
+  }
+}
+
 /** Videos per add request. */
 const ADD_BATCH = 50;
 /** Stops reading a playlist after this many pages (about 100 tracks each). */
@@ -227,7 +270,9 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
     for (let i = 0; i < videoIds.length; i += ADD_BATCH) {
       const batch = videoIds.slice(i, i + ADD_BATCH);
       // Safe to retry: adding a video that's already there does nothing.
-      await retryNetwork(() => yt.playlist.addVideos(playlistId, batch));
+      await withPlaylistLock(playlistId, () =>
+        retryEdit(() => yt.playlist.addVideos(playlistId, batch)),
+      );
     }
     log.info("Added to YouTube playlist", {
       id: playlistId,
@@ -240,38 +285,51 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
     oldVideoId: string,
     newVideoId: string,
     { keepOld }: { keepOld: boolean },
-  ) => {
-    const yt = await innertube();
-    const current = await playlistTracks(playlistId);
-    if (!current) throw new Error("The YouTube Music playlist is gone");
-    const oldThere = current.some((t) => t.videoId === oldVideoId);
+  ) =>
+    withPlaylistLock(playlistId, async () => {
+      const yt = await innertube();
+      const current = await playlistTracks(playlistId);
+      if (!current) throw new Error("The YouTube Music playlist is gone");
+      const oldThere = current.some((t) => t.videoId === oldVideoId);
 
-    await retryNetwork(() => yt.playlist.addVideos(playlistId, [newVideoId]));
-    if (oldThere) {
-      // Position is nice to have. A failed move leaves it at the end.
-      try {
-        await retryNetwork(() =>
-          yt.playlist.moveVideo(playlistId, newVideoId, oldVideoId),
-        );
-      } catch (error) {
-        log.warn("Couldn't move the replacement into place", {
-          id: playlistId,
-          ...describeError(error),
-        });
+      await retryEdit(() => yt.playlist.addVideos(playlistId, [newVideoId]));
+      if (oldThere) {
+        // Position is nice to have. A failed move leaves it at the end.
+        try {
+          await retryEdit(() =>
+            yt.playlist.moveVideo(playlistId, newVideoId, oldVideoId),
+          );
+        } catch (error) {
+          log.warn("Couldn't move the replacement into place", {
+            id: playlistId,
+            ...describeError(error),
+          });
+        }
+        if (!keepOld) {
+          try {
+            await retryEdit(() =>
+              yt.playlist.removeVideos(playlistId, [oldVideoId]),
+            );
+          } catch (error) {
+            log.warn(
+              "Added the replacement but couldn't remove the old video",
+              {
+                id: playlistId,
+                old: oldVideoId,
+                ...describeError(error),
+              },
+            );
+            throw new OldVideoNotRemoved(message(error));
+          }
+        }
       }
-      if (!keepOld) {
-        await retryNetwork(() =>
-          yt.playlist.removeVideos(playlistId, [oldVideoId]),
-        );
-      }
-    }
-    log.info("Replaced a video in a YouTube playlist", {
-      id: playlistId,
-      old: oldVideoId,
-      new: newVideoId,
-      removedOld: oldThere && !keepOld,
+      log.info("Replaced a video in a YouTube playlist", {
+        id: playlistId,
+        old: oldVideoId,
+        new: newVideoId,
+        removedOld: oldThere && !keepOld,
+      });
     });
-  };
 
   const playlistTracks = async (playlistId: string) => {
     const yt = await innertube();
