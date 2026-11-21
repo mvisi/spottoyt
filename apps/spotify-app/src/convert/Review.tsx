@@ -49,11 +49,13 @@ const ADD_CHUNK = 50;
 export function Review({
   playlist,
   initial,
+  backLabel,
   onBack,
 }: {
   playlist: Playlist;
   /** What the helper has saved for this playlist when the page opened. */
   initial: PlaylistState;
+  backLabel: string;
   onBack: () => void;
 }) {
   const [saved, setSaved] = useState<SavedStates>(initial.tracks);
@@ -322,7 +324,7 @@ export function Review({
         <Art src={playlist.image} size={160} />
         <div className="syt-t-txt">
           <button type="button" className="syt-link" onClick={onBack}>
-            <Icon.back /> Change playlist
+            <Icon.back /> {backLabel}
           </button>
           <div className="syt-big">{playlist.name}</div>
           <div className="syt-stats">

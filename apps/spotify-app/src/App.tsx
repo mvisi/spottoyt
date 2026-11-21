@@ -1,35 +1,23 @@
-import { useEffect, useState } from "react";
 import { ConvertPage } from "./convert/ConvertPage";
 import { LibraryPage } from "./LibraryPage";
-import { PENDING_PLAYLIST_EVENT, takePendingPlaylist } from "./pending";
+import { navigate, type Tab, useView, type View } from "./nav";
 import { SettingsPage } from "./SettingsPage";
 import { summarize, useConnection } from "./status";
 
-type Tab = "convert" | "library" | "settings";
 const tabs: Array<[Tab, string]> = [
   ["convert", "Convert"],
   ["library", "Library"],
   ["settings", "Settings"],
 ];
 
+/** The last Convert view, so the Convert tab returns to the open review. */
+let lastConvert: View = { tab: "convert" };
+
 export function App() {
-  const [tab, setTab] = useState<Tab>("convert");
-  const [playlistUri, setPlaylistUri] = useState<string | null>(null);
+  const view = useView();
   const connection = useConnection();
   const summary = summarize(connection);
-
-  useEffect(() => {
-    const take = () => {
-      const uri = takePendingPlaylist();
-      if (uri) {
-        setPlaylistUri(uri);
-        setTab("convert");
-      }
-    };
-    take();
-    window.addEventListener(PENDING_PLAYLIST_EVENT, take);
-    return () => window.removeEventListener(PENDING_PLAYLIST_EVENT, take);
-  }, []);
+  if (view.tab === "convert") lastConvert = view;
 
   return (
     <div className="syt">
@@ -39,8 +27,15 @@ export function App() {
           <button
             key={id}
             type="button"
-            className={`syt-tab${tab === id ? " on" : ""}`}
-            onClick={() => setTab(id)}
+            className={`syt-tab${view.tab === id ? " on" : ""}`}
+            onClick={() => {
+              if (id === view.tab) {
+                // Clicking Convert again goes back to the playlist list.
+                if (id === "convert" && view.playlist) navigate({ tab: id });
+                return;
+              }
+              navigate(id === "convert" ? lastConvert : { tab: id });
+            }}
           >
             {label}
           </button>
@@ -50,28 +45,33 @@ export function App() {
           type="button"
           className={`syt-dot ${summary.tone}`}
           title="Connection details"
-          onClick={() => setTab("settings")}
+          onClick={() => navigate({ tab: "settings" })}
         >
           <i />
           {summary.label}
         </button>
       </nav>
       <main className="syt-pad">
-        {tab === "convert" && (
+        {view.tab === "convert" && (
           <ConvertPage
-            playlistUri={playlistUri}
-            onPlaylistChange={setPlaylistUri}
+            playlistUri={view.playlist ?? null}
+            backLabel={
+              view.from === "library" ? "Back to Library" : "All playlists"
+            }
+            onOpen={(uri) =>
+              navigate({ tab: "convert", playlist: uri, from: "convert" })
+            }
+            onBack={() => navigate({ tab: view.from ?? "convert" })}
           />
         )}
-        {tab === "library" && (
+        {view.tab === "library" && (
           <LibraryPage
-            onOpen={(uri) => {
-              setPlaylistUri(uri);
-              setTab("convert");
-            }}
+            onOpen={(uri) =>
+              navigate({ tab: "convert", playlist: uri, from: "library" })
+            }
           />
         )}
-        {tab === "settings" && <SettingsPage connection={connection} />}
+        {view.tab === "settings" && <SettingsPage connection={connection} />}
       </main>
     </div>
   );

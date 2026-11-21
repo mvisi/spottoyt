@@ -37,7 +37,15 @@ declare namespace Spicetify {
   }
 
   namespace Platform {
-    const History: { push(path: string): void };
+    type Location = { pathname: string; search?: string; state?: unknown };
+    const History: {
+      push(
+        to: string | { pathname: string; search?: string; state?: unknown },
+      ): void;
+      location: Location;
+      /** Returns a function that stops listening. */
+      listen(listener: (location: Location) => void): () => void;
+    };
 
     type Image = { url: string; width?: number | null };
 

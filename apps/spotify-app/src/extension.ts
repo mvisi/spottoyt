@@ -1,5 +1,5 @@
 // Runs at Spotify startup: adds "Convert with SpottoYT" to playlist menus.
-import { PENDING_PLAYLIST_EVENT, PENDING_PLAYLIST_KEY } from "./pending";
+import { navigate } from "./nav";
 
 function register() {
   if (
@@ -25,9 +25,7 @@ function register() {
     "Convert with SpottoYT",
     ([uri]) => {
       if (!uri) return;
-      localStorage.setItem(PENDING_PLAYLIST_KEY, uri);
-      window.dispatchEvent(new Event(PENDING_PLAYLIST_EVENT));
-      Spicetify.Platform.History.push("/spottoyt");
+      navigate({ tab: "convert", playlist: uri });
     },
     isPlaylist,
     "playlist",

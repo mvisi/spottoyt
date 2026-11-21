@@ -7,22 +7,36 @@ import { Review } from "./Review";
 
 export function ConvertPage({
   playlistUri,
-  onPlaylistChange,
+  backLabel,
+  onOpen,
+  onBack,
 }: {
   playlistUri: string | null;
-  onPlaylistChange: (uri: string | null) => void;
+  /** Text for the button that leaves the review. */
+  backLabel: string;
+  onOpen: (uri: string) => void;
+  onBack: () => void;
 }) {
-  if (!playlistUri) return <PlaylistPicker onPick={onPlaylistChange} />;
+  if (!playlistUri) return <PlaylistPicker onPick={onOpen} />;
   return (
     <LoadedReview
       key={playlistUri}
       uri={playlistUri}
-      onBack={() => onPlaylistChange(null)}
+      backLabel={backLabel}
+      onBack={onBack}
     />
   );
 }
 
-function LoadedReview({ uri, onBack }: { uri: string; onBack: () => void }) {
+function LoadedReview({
+  uri,
+  backLabel,
+  onBack,
+}: {
+  uri: string;
+  backLabel: string;
+  onBack: () => void;
+}) {
   const [loaded, setLoaded] = useState<{
     playlist: Playlist;
     state: PlaylistState;
@@ -57,5 +71,12 @@ function LoadedReview({ uri, onBack }: { uri: string; onBack: () => void }) {
       </p>
     );
   }
-  return <Review playlist={playlist} initial={state} onBack={onBack} />;
+  return (
+    <Review
+      playlist={playlist}
+      initial={state}
+      backLabel={backLabel}
+      onBack={onBack}
+    />
+  );
 }
