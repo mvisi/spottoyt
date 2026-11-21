@@ -2,6 +2,7 @@
 // while the app polls for them.
 import type { MatchJob, SpotifyTrack, TrackMatch } from "@spottoyt/shared";
 import { describeError, log } from "../log";
+import { YoutubeProblem } from "../youtube";
 
 export type MatchJobs = {
   start(tracks: SpotifyTrack[], options?: { fresh?: boolean }): MatchJob;
@@ -44,11 +45,13 @@ export function createMatchJobs(match: MatchFn): MatchJobs {
         if (!track) return;
 
         let result: TrackMatch;
+        let lastError: unknown;
         try {
           result = await match(track, { fresh });
           consecutiveErrors = 0;
         } catch (error) {
           consecutiveErrors++;
+          lastError = error;
           log.warn("Matching a track failed", {
             job: job.id,
             track: `${track.artists.join(", ")} - ${track.title}`,
@@ -65,7 +68,11 @@ export function createMatchJobs(match: MatchFn): MatchJobs {
 
         if (job.status !== "running") return;
         job.results.push(result);
-        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        // A stopped VPN or expired sign-in fails every track the same way.
+        if (lastError instanceof YoutubeProblem) {
+          job.status = "failed";
+          job.error = lastError.message;
+        } else if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
           job.status = "failed";
           job.error = `Stopped after ${consecutiveErrors} failed searches in a row. Last error: ${result.error}`;
         }

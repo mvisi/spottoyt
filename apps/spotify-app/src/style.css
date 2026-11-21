@@ -755,3 +755,44 @@ button.syt-dot:hover {
 .syt-search .syt-input {
   max-width: 420px;
 }
+
+/* ---------- Problems and settings ---------- */
+.syt-problem {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.syt-problem-text {
+  flex: 1;
+  min-width: 240px;
+  display: grid;
+  gap: 2px;
+  color: var(--syt-text);
+}
+.syt-problem .syt-code {
+  margin: 0;
+}
+.syt-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 10px 0;
+}
+.syt-setting + .syt-setting {
+  border-top: 1px solid var(--syt-hl);
+}
+.syt-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 200px;
+}
+.syt-range input {
+  flex: 1;
+  accent-color: var(--syt-accent);
+}
+.syt-setting input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--syt-accent);
+}

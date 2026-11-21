@@ -1,63 +1,153 @@
-import { helperUrl } from "./helper";
-import { type ConnectionState, summarize } from "./status";
+import type { Settings } from "@spottoyt/shared";
+import { useEffect, useState } from "react";
+import { helper, helperUrl } from "./helper";
+import { ProblemBanner } from "./Problem";
+import type { ConnectionState } from "./status";
+import { notify } from "./ui";
 
 export function SettingsPage({ connection }: { connection: ConnectionState }) {
   const { helperOnline, youtube, checking, refresh } = connection;
-  const summary = summarize(connection);
+
+  return (
+    <>
+      <section className="syt-section">
+        <h2 className="syt-h2">Connection</h2>
+        <div className="syt-panel">
+          <Row
+            label="Helper"
+            value={helperOnline ? `Running at ${helperUrl()}` : "Not running"}
+            ok={!!helperOnline}
+          />
+          {youtube?.vpn && (
+            <Row
+              label="VPN tunnel"
+              value={youtube.vpn === "up" ? "Running" : "Not running"}
+              ok={youtube.vpn === "up"}
+            />
+          )}
+          <Row
+            label="YouTube Music account"
+            value={
+              !youtube || youtube.vpn === "down"
+                ? "Unknown"
+                : !youtube.configured
+                  ? "Not set up"
+                  : youtube.signedIn
+                    ? "Signed in"
+                    : "Sign-in expired"
+            }
+            ok={!!youtube?.signedIn}
+          />
+          <Row
+            label="YouTube Music search"
+            value={
+              !youtube || youtube.vpn === "down"
+                ? "Unknown"
+                : youtube.searchAvailable
+                  ? "Available"
+                  : "Returns no songs"
+            }
+            ok={!!youtube?.searchAvailable}
+          />
+          <div className="syt-panel-foot">
+            <button
+              type="button"
+              className="syt-ghost"
+              disabled={!helperOnline || checking}
+              onClick={refresh}
+            >
+              {checking ? "Checking…" : "Check again"}
+            </button>
+            {youtube && (
+              <span className="syt-muted">
+                Last checked {new Date(youtube.checkedAt).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+        </div>
+        <ProblemBanner connection={connection} full />
+      </section>
+      {helperOnline && <MatchingSettings />}
+    </>
+  );
+}
+
+function MatchingSettings() {
+  const [settings, setSettings] = useState<Settings | null>(null);
+  // The slider moves freely; it's saved when you let go.
+  const [score, setScore] = useState(90);
+
+  useEffect(() => {
+    helper.settings().then(
+      (s) => {
+        setSettings(s);
+        setScore(s.autoAcceptScore);
+      },
+      () => {},
+    );
+  }, []);
+
+  const save = async (patch: Partial<Settings>) => {
+    try {
+      const next = await helper.updateSettings(patch);
+      setSettings(next);
+      setScore(next.autoAcceptScore);
+    } catch (e) {
+      notify(`Couldn't save the setting: ${(e as Error).message}`, true);
+    }
+  };
+
+  if (!settings) return null;
+  const saveScore = () => {
+    if (score !== settings.autoAcceptScore)
+      void save({ autoAcceptScore: score });
+  };
 
   return (
     <section className="syt-section">
-      <h2 className="syt-h2">Connection</h2>
+      <h2 className="syt-h2">Matching</h2>
       <div className="syt-panel">
-        <Row
-          label="Helper"
-          value={helperOnline ? `Running at ${helperUrl()}` : "Not running"}
-          ok={!!helperOnline}
-        />
-        <Row
-          label="YouTube Music account"
-          value={
-            !youtube
-              ? "Unknown"
-              : !youtube.configured
-                ? "Not set up"
-                : youtube.signedIn
-                  ? "Signed in"
-                  : "Cookie no longer works"
-          }
-          ok={!!youtube?.signedIn}
-        />
-        <Row
-          label="YouTube Music search"
-          value={
-            !youtube
-              ? "Unknown"
-              : youtube.searchAvailable
-                ? "Available"
-                : "Returns no songs"
-          }
-          ok={!!youtube?.searchAvailable}
-        />
-        {youtube?.error && <p className="syt-error">{youtube.error}</p>}
-        <div className="syt-panel-foot">
-          <button
-            type="button"
-            className="syt-ghost"
-            disabled={!helperOnline || checking}
-            onClick={refresh}
-          >
-            {checking ? "Checking…" : "Check again"}
-          </button>
-          {youtube && (
-            <span className="syt-muted">
-              Last checked {new Date(youtube.checkedAt).toLocaleTimeString()}
-            </span>
-          )}
-        </div>
+        <label className="syt-setting">
+          <div>
+            <div className="syt-strong">Auto-accept score</div>
+            <div className="syt-muted small">
+              Matches scoring this or higher are accepted without asking you.
+              Lower means less reviewing but more wrong versions slipping
+              through. 90 is the default.
+            </div>
+          </div>
+          <div className="syt-range">
+            <input
+              type="range"
+              min={70}
+              max={100}
+              value={score}
+              onChange={(e) => setScore(Number(e.target.value))}
+              onPointerUp={saveScore}
+              onKeyUp={saveScore}
+              onBlur={saveScore}
+            />
+            <b>{score}</b>
+          </div>
+        </label>
+        <label className="syt-setting">
+          <div>
+            <div className="syt-strong">Use music videos</div>
+            <div className="syt-muted small">
+              Search videos too when no song version matches well. Some tracks
+              only exist on YouTube as the artist's video.
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.includeVideos}
+            onChange={(e) => save({ includeVideos: e.target.checked })}
+          />
+        </label>
+        <p className="syt-muted small">
+          Changes apply the next time you open a playlist.
+        </p>
       </div>
-      {summary.tone !== "ok" && summary.tone !== "idle" && (
-        <Fix connection={connection} />
-      )}
     </section>
   );
 }
@@ -78,36 +168,6 @@ function Row({
         <i />
         {value}
       </span>
-    </div>
-  );
-}
-
-function Fix({ connection }: { connection: ConnectionState }) {
-  const { helperOnline, youtube } = connection;
-  let title: string;
-  let steps: string[];
-
-  if (!helperOnline) {
-    title = "Start the helper";
-    steps = ["bun run dev"];
-  } else if (!youtube?.configured || !youtube.signedIn) {
-    title = youtube?.configured
-      ? "Refresh your YouTube Music cookie"
-      : "Sign in to YouTube Music";
-    steps = ["bun run setup:youtube"];
-  } else {
-    title = "Route the helper through a VPN";
-    steps = [
-      "wireproxy -c ~/.config/spottoyt/wireproxy.conf",
-      "# then set HTTPS_PROXY=http://127.0.0.1:25345 in .env and restart the helper",
-    ];
-  }
-
-  return (
-    <div className="syt-panel">
-      <div className="syt-strong">{title}</div>
-      <p className="syt-muted">Run in the SpottoYT repo:</p>
-      <pre className="syt-code">{steps.join("\n")}</pre>
     </div>
   );
 }

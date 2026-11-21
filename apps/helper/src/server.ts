@@ -21,7 +21,11 @@ import { scoreCandidate } from "./matching/score";
 import type { MatchStore } from "./matching/store";
 import type { PlaylistStore } from "./playlists/store";
 import { type SettingsStore, settingsPatchSchema } from "./settings";
-import { OldVideoNotRemoved, type YoutubeClient } from "./youtube";
+import {
+  OldVideoNotRemoved,
+  type YoutubeClient,
+  YoutubeProblem,
+} from "./youtube";
 
 export type Deps = {
   version: string;
@@ -191,12 +195,14 @@ export function createHandler(deps: Deps) {
         searchQuerySchema,
         Object.fromEntries(url.searchParams),
       );
-      const results = await deps.youtube.search({
-        query: query.q,
-        kind: query.kind,
-        limit: query.limit,
-        lang: query.lang ?? languageForText(query.q),
-      });
+      const results = await youtubeCall(() =>
+        deps.youtube.search({
+          query: query.q,
+          kind: query.kind,
+          limit: query.limit,
+          lang: query.lang ?? languageForText(query.q),
+        }),
+      );
       return json<SearchResponse>({ results });
     }),
 
@@ -204,7 +210,7 @@ export function createHandler(deps: Deps) {
       if (!/^[\w-]{11}$/.test(id)) {
         throw new HttpError(400, "Not a YouTube video ID");
       }
-      const track = await deps.youtube.video(id);
+      const track = await youtubeCall(() => deps.youtube.video(id));
       if (!track) throw new HttpError(404, "That video doesn't exist");
       return json<YoutubeTrack>(track);
     }),
@@ -489,6 +495,10 @@ async function youtubeCall<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (error) {
     if (error instanceof HttpError) throw error;
+    // Known problems carry their own fix, e.g. "start the VPN".
+    if (error instanceof YoutubeProblem) {
+      throw new HttpError(503, error.message, { cause: error });
+    }
     log.warn("YouTube Music call failed", describeError(error));
     const reason = error instanceof Error ? error.message : String(error);
     throw new HttpError(502, `YouTube Music: ${reason}`, { cause: error });

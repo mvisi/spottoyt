@@ -8,7 +8,7 @@ import type {
   YoutubeTrack,
   YoutubeTrackKind,
 } from "@spottoyt/shared";
-import type { YoutubeClient } from "../youtube";
+import { type YoutubeClient, YoutubeProblem } from "../youtube";
 import { DEFAULT_LANGUAGE, searchLanguage } from "./language";
 import { isConfidentMatch, rankCandidates, scoreCandidate } from "./score";
 import type { MatchStore } from "./store";
@@ -199,7 +199,8 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
       return await fn();
     } catch (error) {
       const delay = delays[attempt];
-      if (delay === undefined) throw error;
+      // Retrying can't fix a stopped VPN or an expired sign-in.
+      if (delay === undefined || error instanceof YoutubeProblem) throw error;
       await Bun.sleep(delay);
     }
   }

@@ -109,6 +109,44 @@ const REQUEST_TIMEOUT_MS = 10_000;
 /** Requests slower than this are logged. */
 const SLOW_REQUEST_MS = 4_000;
 
+// ---------- Problems with a known fix ----------
+
+/** A failure the user can fix, with a message saying how. */
+export class YoutubeProblem extends Error {
+  constructor(
+    readonly kind: "vpn_down" | "signed_out",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const VPN_DOWN =
+  "The VPN tunnel isn't running, so YouTube Music can't be reached. Start it with `bun run vpn`, or restart `bun run dev`.";
+const SIGNED_OUT =
+  "Your YouTube Music sign-in expired. Run `bun run setup:youtube` with a fresh cookie.";
+
+const proxy = process.env.HTTPS_PROXY ? new URL(process.env.HTTPS_PROXY) : null;
+
+/** Whether the VPN proxy answers. Null when the helper doesn't use one. */
+export async function vpnUp(): Promise<boolean | null> {
+  if (!proxy) return null;
+  try {
+    const socket = await Bun.connect({
+      hostname: proxy.hostname,
+      port: Number(proxy.port),
+      socket: { data() {} },
+    });
+    socket.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Set when a request hits a known problem, so the next status check is fresh. */
+let statusStale = false;
+
 /** fetch with a timeout, logging slow and failed YouTube requests. */
 export const youtubeFetch = (async (input, init) => {
   const request = input instanceof Request ? input : null;
@@ -129,16 +167,34 @@ export const youtubeFetch = (async (input, init) => {
         status: res.status,
         ms: elapsed(),
       });
+      if (res.status === 401) {
+        statusStale = true;
+        throw new YoutubeProblem("signed_out", SIGNED_OUT);
+      }
     } else if (elapsed() > SLOW_REQUEST_MS) {
       log.warn("Slow YouTube request", { path: url.pathname, ms: elapsed() });
     }
     return res;
   } catch (error) {
+    if (error instanceof YoutubeProblem) throw error;
     log.warn("YouTube request failed", {
       path: url.pathname,
       ms: elapsed(),
       ...describeError(error),
     });
+    // A refused connection to the proxy means the tunnel is down. Say so
+    // instead of retrying a request that can't work.
+    if (
+      proxy &&
+      /ConnectionRefused|Unable to connect/i.test(
+        `${(error as { code?: string }).code} ${message(error)}`,
+      )
+    ) {
+      if ((await vpnUp()) === false) {
+        statusStale = true;
+        throw new YoutubeProblem("vpn_down", VPN_DOWN);
+      }
+    }
     throw error;
   }
 }) as typeof fetch;
@@ -214,6 +270,14 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
       checkedAt: new Date().toISOString(),
     };
     const errors: string[] = [];
+
+    const vpn = await vpnUp();
+    if (vpn !== null) status.vpn = vpn ? "up" : "down";
+    if (vpn === false) {
+      // Every other check would fail the same way.
+      status.error = VPN_DOWN;
+      return status;
+    }
 
     try {
       status.searchAvailable =
@@ -387,11 +451,13 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
     async status({ refresh = false } = {}) {
       if (
         !refresh &&
+        !statusStale &&
         cachedStatus &&
         Date.now() - cachedStatus.at < STATUS_TTL_MS
       ) {
         return cachedStatus.value;
       }
+      statusStale = false;
       const value = await checkStatus();
       cachedStatus = { at: Date.now(), value };
       return value;

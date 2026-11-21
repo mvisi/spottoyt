@@ -1,6 +1,7 @@
 import { ConvertPage } from "./convert/ConvertPage";
 import { LibraryPage } from "./LibraryPage";
 import { navigate, type Tab, type View } from "./nav";
+import { ProblemBanner } from "./Problem";
 import { SettingsPage } from "./SettingsPage";
 import { summarize, useConnection } from "./status";
 import { useView } from "./useView";
@@ -53,6 +54,7 @@ export function App() {
         </button>
       </nav>
       <main className="syt-pad">
+        {view.tab !== "settings" && <ProblemBanner connection={connection} />}
         {view.tab === "convert" && (
           <ConvertPage
             playlistUri={view.playlist ?? null}

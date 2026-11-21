@@ -45,9 +45,16 @@ export function useConnection(): ConnectionState {
     };
   }, []);
 
+  // The helper caches the status and rechecks right after a request hits a
+  // problem (VPN down, sign-in expired), so polling it is cheap.
   useEffect(() => {
-    if (helperOnline) loadYoutube(false);
-    else setYoutube(null);
+    if (!helperOnline) {
+      setYoutube(null);
+      return;
+    }
+    loadYoutube(false);
+    const timer = setInterval(() => loadYoutube(false), 30_000);
+    return () => clearInterval(timer);
   }, [helperOnline, loadYoutube]);
 
   return {
@@ -70,6 +77,8 @@ export function summarize({
   if (helperOnline === null) return { tone: "idle", label: "Checking helper…" };
   if (!helperOnline) return { tone: "bad", label: "Helper not running" };
   if (!youtube) return { tone: "idle", label: "Checking YouTube Music…" };
+  if (youtube.vpn === "down")
+    return { tone: "bad", label: "VPN tunnel not running" };
   if (!youtube.configured)
     return { tone: "warn", label: "YouTube Music not signed in" };
   if (!youtube.signedIn)
@@ -77,4 +86,63 @@ export function summarize({
   if (!youtube.searchAvailable)
     return { tone: "warn", label: "YouTube Music blocked in this region" };
   return { tone: "ok", label: "YouTube Music connected" };
+}
+
+export type Fix = {
+  title: string;
+  /** What's wrong and what the command does. */
+  detail: string;
+  /** Run in the SpottoYT repo. */
+  command?: string;
+};
+
+/** What to do about the current connection problem, or null if none. */
+export function fixFor({ helperOnline, youtube }: ConnectionState): Fix | null {
+  if (helperOnline === false) {
+    return {
+      title: "SpottoYT isn't running",
+      detail:
+        "Start it in the SpottoYT folder. It starts the VPN tunnel too, and Ctrl+C stops both when you're done.",
+      command: "bun run dev",
+    };
+  }
+  if (!youtube) return null;
+  if (youtube.vpn === "down") {
+    return {
+      title: "The VPN tunnel isn't running",
+      detail:
+        "YouTube Music can't be reached without it. Start it on its own, or restart `bun run dev`, which starts it for you.",
+      command: "bun run vpn",
+    };
+  }
+  if (!youtube.configured) {
+    return {
+      title: "Sign in to YouTube Music",
+      detail:
+        "SpottoYT needs your YouTube Music cookie to create playlists. The command explains where to copy it from.",
+      command: "bun run setup:youtube",
+    };
+  }
+  if (!youtube.signedIn) {
+    return {
+      title: "Your YouTube Music sign-in expired",
+      detail:
+        "The saved cookie no longer works. Copy a fresh one from music.youtube.com; the command explains how. No restart needed.",
+      command: "bun run setup:youtube",
+    };
+  }
+  if (!youtube.searchAvailable) {
+    return youtube.vpn
+      ? {
+          title: "YouTube Music returns no songs through the VPN",
+          detail:
+            "The VPN server is probably in a country without YouTube Music. Download a WireGuard config for another server (the US works) and point wireproxy.conf at it.",
+        }
+      : {
+          title: "YouTube Music isn't available from here",
+          detail:
+            "Route the helper through a VPN: see “Unsupported regions” in the README, then set HTTPS_PROXY in .env and restart `bun run dev`.",
+        };
+  }
+  return null;
 }

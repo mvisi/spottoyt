@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { SpotifyTrack, TrackMatch } from "@spottoyt/shared";
+import { YoutubeProblem } from "../youtube";
 import { createMatchJobs } from "./jobs";
 
 const tracks: SpotifyTrack[] = Array.from({ length: 10 }, (_, i) => ({
@@ -69,6 +70,21 @@ describe("match jobs", () => {
     expect(job?.status).toBe("failed");
     expect(job?.error).toContain("rate limited");
     expect(job?.results.length).toBeLessThan(10);
+  });
+
+  test("stops right away when the VPN is down, with the fix", async () => {
+    const jobs = createMatchJobs(async () => {
+      throw new YoutubeProblem("vpn_down", "Start it with `bun run vpn`.");
+    });
+
+    const { id } = jobs.start(tracks);
+    await settle(() => jobs.get(id));
+
+    const job = jobs.get(id);
+    expect(job?.status).toBe("failed");
+    expect(job?.error).toBe("Start it with `bun run vpn`.");
+    // Only the tracks already in flight, not all ten.
+    expect(job?.results.length).toBeLessThanOrEqual(4);
   });
 
   test("cancelling stops new work", async () => {

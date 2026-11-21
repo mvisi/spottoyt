@@ -22,6 +22,11 @@ export type YoutubeStatus = {
    * helper's traffic comes from a region where YouTube Music isn't available.
    */
   searchAvailable: boolean;
+  /**
+   * The VPN tunnel the helper sends YouTube traffic through (HTTPS_PROXY).
+   * Absent when the helper isn't set up to use one.
+   */
+  vpn?: "up" | "down";
   /** Set when one of the checks failed for a reason other than the above. */
   error?: string;
   checkedAt: string;
