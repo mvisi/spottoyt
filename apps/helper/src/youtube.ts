@@ -31,7 +31,18 @@ export type YoutubeClient = {
   search(options: SearchOptions): Promise<YoutubeTrack[]>;
   /** Looks up one video, e.g. from a pasted link. Null if it doesn't exist. */
   video(videoId: string): Promise<YoutubeTrack | null>;
+  /** Creates a private playlist and returns its ID. */
+  createPlaylist(title: string, description: string): Promise<string>;
+  /** Appends videos. YouTube ignores ones already in the playlist. */
+  addToPlaylist(playlistId: string, videoIds: string[]): Promise<void>;
+  /** Everything in the playlist, or null if it no longer exists. */
+  playlistTracks(playlistId: string): Promise<YoutubeTrack[] | null>;
 };
+
+/** Videos per add request. */
+const ADD_BATCH = 50;
+/** Stops reading a playlist after this many pages (about 100 tracks each). */
+const MAX_PLAYLIST_PAGES = 200;
 
 // A query that always has song results where YouTube Music is available.
 const REGION_PROBE_QUERY = "Bohemian Rhapsody Queen";
@@ -187,9 +198,76 @@ export function createYoutubeClient(cookiePath: string): YoutubeClient {
     }
   };
 
+  const createPlaylist = async (title: string, description: string) => {
+    const yt = await innertube();
+    // Not retried: if the response got lost, a retry would make a duplicate.
+    const res = await yt.playlist.create(title, [], "PRIVATE", description);
+    if (!res.success || !res.playlist_id) {
+      throw new Error(
+        `YouTube didn't create the playlist (status ${res.status_code})`,
+      );
+    }
+    log.info("Created YouTube playlist", { id: res.playlist_id, title });
+    return res.playlist_id;
+  };
+
+  const addToPlaylist = async (playlistId: string, videoIds: string[]) => {
+    const yt = await innertube();
+    for (let i = 0; i < videoIds.length; i += ADD_BATCH) {
+      const batch = videoIds.slice(i, i + ADD_BATCH);
+      // Safe to retry: adding a video that's already there does nothing.
+      await retryNetwork(() => yt.playlist.addVideos(playlistId, batch));
+    }
+    log.info("Added to YouTube playlist", {
+      id: playlistId,
+      videos: videoIds.length,
+    });
+  };
+
+  const playlistTracks = async (playlistId: string) => {
+    const yt = await innertube();
+    let page: Awaited<ReturnType<typeof yt.music.getPlaylist>>;
+    try {
+      page = await retryNetwork(() => yt.music.getPlaylist(playlistId));
+    } catch (error) {
+      if (/not found|does not exist|404|unavailable/i.test(message(error))) {
+        return null;
+      }
+      throw error;
+    }
+    // A deleted playlist comes back empty instead of failing. Real ones,
+    // even empty, always have a header with their title.
+    if (!page.header) return null;
+    const tracks: YoutubeTrack[] = [];
+    for (let pages = 1; ; pages++) {
+      for (const item of page.items) {
+        if (!(item instanceof YTNodes.MusicResponsiveListItem)) continue;
+        // Unavailable videos have no type, but they're still in the playlist.
+        const track =
+          toYoutubeTrack(item) ??
+          (item.id
+            ? {
+                videoId: item.id,
+                title: item.title ?? item.id,
+                artists: [],
+                kind: "video" as const,
+              }
+            : null);
+        if (track) tracks.push(track);
+      }
+      if (!page.has_continuation || pages >= MAX_PLAYLIST_PAGES) break;
+      const current = page;
+      page = await retryNetwork(() => current.getContinuation());
+    }
+    return tracks;
+  };
+
   return {
     search,
     video,
+    createPlaylist,
+    addToPlaylist,
+    playlistTracks,
     async status({ refresh = false } = {}) {
       if (
         !refresh &&

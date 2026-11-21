@@ -93,6 +93,11 @@ export function playOnSpotify(uri: string) {
   void Spicetify.Player.playUri(uri);
 }
 
+/** Opens Spotify's search page, e.g. to find a song added on YouTube. */
+export function searchOnSpotify(query: string) {
+  Spicetify.Platform.History.push(`/search/${encodeURIComponent(query)}`);
+}
+
 /** The smallest image at least `min` pixels wide, else the largest. */
 function pickImage(images: Spicetify.Platform.Image[] = [], min = 300) {
   const sorted = [...images].sort((a, b) => (a.width ?? 0) - (b.width ?? 0));

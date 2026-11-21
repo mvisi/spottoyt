@@ -113,3 +113,58 @@ export type SetTrackMatchRequest = {
   spotifyUri: string;
   track: YoutubeTrack;
 };
+
+// ---------- Linked playlists ----------
+// Syncing only ever adds to YouTube Music. Nothing is removed there, and the
+// Spotify playlist is never changed.
+
+/** A Spotify playlist and the YouTube Music playlist made from it. */
+export type PlaylistLink = {
+  spotifyUri: string;
+  spotifyName: string;
+  youtubePlaylistId: string;
+  youtubeTitle: string;
+  createdAt: string;
+  /** Last time tracks were added. */
+  syncedAt?: string;
+  /** Tracks added to YouTube so far. */
+  added: number;
+  skipped: number;
+};
+
+/** What's settled for one track in one playlist. */
+export type PlaylistTrackState =
+  /** On the YouTube playlist. Never added again, even if removed there. */
+  | { state: "added"; track: YoutubeTrack; at: string }
+  /** You chose to leave it out of this playlist. */
+  | { state: "skipped"; at: string };
+
+export type PlaylistState = {
+  link: PlaylistLink | null;
+  /** By Spotify track URI. Tracks without an entry are new. */
+  tracks: Record<string, PlaylistTrackState>;
+};
+
+export type CreateLinkRequest = {
+  spotifyName: string;
+  /** Title for the new YouTube Music playlist. */
+  title: string;
+};
+
+export type AddTracksRequest = {
+  tracks: Array<{ spotifyUri: string; track: YoutubeTrack }>;
+};
+
+export type AddTracksResponse = {
+  /** Updated states for the tracks just added. */
+  tracks: Record<string, PlaylistTrackState>;
+  link: PlaylistLink;
+};
+
+/** How the YouTube playlist differs from what SpottoYT added to it. */
+export type YoutubeDiff = {
+  /** On the YouTube playlist but not added from Spotify, e.g. added by hand. */
+  onlyOnYoutube: YoutubeTrack[];
+  /** Spotify tracks added before but since removed on YouTube. */
+  removedOnYoutube: string[];
+};

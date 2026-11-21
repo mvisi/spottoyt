@@ -17,6 +17,8 @@ type Data = Record<string, unknown>;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 
 let file: string | null = null;
+/** Tests check results, not log lines. */
+const quiet = process.env.NODE_ENV === "test";
 
 export function logToFile(path: string) {
   mkdirSync(dirname(path), { recursive: true });
@@ -30,7 +32,7 @@ function write(level: Level, message: string, data?: Data) {
   const line = `${timestamp()} ${level.toUpperCase().padEnd(5)} ${message}${
     data ? ` ${JSON.stringify(data, replacer)}` : ""
   }`;
-  (level === "info" ? console.log : console.error)(line);
+  if (!quiet) (level === "info" ? console.log : console.error)(line);
   if (file) {
     try {
       appendFileSync(file, `${line}\n`);

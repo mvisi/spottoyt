@@ -1,10 +1,14 @@
 import type {
+  AddTracksResponse,
   ErrorResponse,
   HealthResponse,
   MatchJob,
+  PlaylistLink,
+  PlaylistState,
   SearchResponse,
   Settings,
   SpotifyTrack,
+  YoutubeDiff,
   YoutubeStatus,
   YoutubeTrack,
 } from "@spottoyt/shared";
@@ -13,6 +17,7 @@ import { describeError, log } from "./log";
 import type { MatchJobs } from "./matching/jobs";
 import { languageForText } from "./matching/language";
 import type { MatchStore } from "./matching/store";
+import type { PlaylistStore } from "./playlists/store";
 import { type SettingsStore, settingsPatchSchema } from "./settings";
 import type { YoutubeClient } from "./youtube";
 
@@ -22,6 +27,7 @@ export type Deps = {
   youtube: YoutubeClient;
   jobs: MatchJobs;
   matches: MatchStore;
+  playlists: PlaylistStore;
 };
 
 // The Spotify app runs on https://xpui.app.spotify.com and calls us on
@@ -83,6 +89,20 @@ const setManualSchema = z.object({
   track: youtubeTrackSchema,
 });
 
+const createLinkSchema = z.object({
+  spotifyName: z.string().min(1),
+  title: z.string().trim().min(1).max(150),
+});
+
+const addTracksSchema = z.object({
+  tracks: z
+    .array(
+      z.object({ spotifyUri: z.string().min(1), track: youtubeTrackSchema }),
+    )
+    .min(1)
+    .max(200),
+});
+
 const jobQuerySchema = z.object({
   since: z.coerce.number().int().nonnegative().default(0),
 });
@@ -125,6 +145,12 @@ export function createHandler(deps: Deps) {
   const jobOr404 = (job: MatchJob | null) => {
     if (!job) throw new HttpError(404, "No such match job");
     return job;
+  };
+
+  const linkOr404 = (uri: string) => {
+    const link = deps.playlists.link(uri);
+    if (!link) throw new HttpError(404, "Not linked to a YouTube playlist yet");
+    return link;
   };
 
   const routes: Route[] = [
@@ -206,6 +232,101 @@ export function createHandler(deps: Deps) {
       deps.matches.clearManual(uri);
       return new Response(null, { status: 204, headers: corsHeaders });
     }),
+
+    // Linked playlists. Syncing only adds to YouTube: nothing there is
+    // removed, and the Spotify side is read-only.
+    route("GET", "/playlists", () =>
+      json<PlaylistLink[]>(deps.playlists.links()),
+    ),
+
+    route("GET", "/playlists/:uri", (_req, _url, { uri = "" }) =>
+      json<PlaylistState>(deps.playlists.state(uri)),
+    ),
+
+    route("POST", "/playlists/:uri/link", async (req, _url, { uri = "" }) => {
+      const body = parse(createLinkSchema, await readJson(req));
+      if (deps.playlists.link(uri)) {
+        throw new HttpError(409, "This playlist is already linked");
+      }
+      const id = await youtubeCall(() =>
+        deps.youtube.createPlaylist(
+          body.title,
+          `Made from the Spotify playlist "${body.spotifyName}" with SpottoYT.`,
+        ),
+      );
+      const link = deps.playlists.createLink({
+        spotifyUri: uri,
+        spotifyName: body.spotifyName,
+        youtubePlaylistId: id,
+        youtubeTitle: body.title,
+      });
+      return json<PlaylistLink>(link, 201);
+    }),
+
+    // Forgets the link. The YouTube playlist itself stays.
+    route("DELETE", "/playlists/:uri/link", (_req, _url, { uri = "" }) => {
+      linkOr404(uri);
+      deps.playlists.unlink(uri);
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }),
+
+    route("POST", "/playlists/:uri/tracks", async (req, _url, { uri = "" }) => {
+      const link = linkOr404(uri);
+      const body = parse(addTracksSchema, await readJson(req));
+      const existing = deps.playlists.state(uri).tracks;
+      const fresh = body.tracks.filter(
+        (t) => existing[t.spotifyUri]?.state !== "added",
+      );
+      const videoIds = [...new Set(fresh.map((t) => t.track.videoId))];
+      if (videoIds.length) {
+        await youtubeCall(() =>
+          deps.youtube.addToPlaylist(link.youtubePlaylistId, videoIds),
+        );
+      }
+      const tracks = deps.playlists.markAdded(uri, fresh);
+      return json<AddTracksResponse>({ tracks, link: linkOr404(uri) });
+    }),
+
+    route("PUT", "/playlists/:uri/skips/:track", (_req, _url, params) => {
+      deps.playlists.setSkipped(params.uri ?? "", params.track ?? "", true);
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }),
+
+    route("DELETE", "/playlists/:uri/skips/:track", (_req, _url, params) => {
+      deps.playlists.setSkipped(params.uri ?? "", params.track ?? "", false);
+      return new Response(null, { status: 204, headers: corsHeaders });
+    }),
+
+    route(
+      "GET",
+      "/playlists/:uri/youtube",
+      async (_req, _url, { uri = "" }) => {
+        const link = linkOr404(uri);
+        const items = await youtubeCall(() =>
+          deps.youtube.playlistTracks(link.youtubePlaylistId),
+        );
+        if (!items) {
+          throw new HttpError(
+            410,
+            "The YouTube Music playlist is gone. It may have been deleted there.",
+          );
+        }
+        const added = Object.entries(deps.playlists.state(uri).tracks).flatMap(
+          ([spotifyUri, s]) =>
+            s.state === "added"
+              ? [{ spotifyUri, videoId: s.track.videoId }]
+              : [],
+        );
+        const addedIds = new Set(added.map((a) => a.videoId));
+        const onYoutube = new Set(items.map((i) => i.videoId));
+        return json<YoutubeDiff>({
+          onlyOnYoutube: items.filter((i) => !addedIds.has(i.videoId)),
+          removedOnYoutube: added
+            .filter((a) => !onYoutube.has(a.videoId))
+            .map((a) => a.spotifyUri),
+        });
+      },
+    ),
   ];
 
   // Polls and health checks are frequent, so they're only logged when
@@ -258,6 +379,18 @@ function readable(url: URL) {
     .map(([key, value]) => `${key}=${value}`)
     .join("&");
   return query ? `${url.pathname}?${query}` : url.pathname;
+}
+
+/** Turns YouTube failures into a 502 the app can show, instead of a 500. */
+async function youtubeCall<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    log.warn("YouTube Music call failed", describeError(error));
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new HttpError(502, `YouTube Music: ${reason}`);
+  }
 }
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {

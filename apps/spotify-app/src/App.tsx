@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ConvertPage } from "./convert/ConvertPage";
+import { LibraryPage } from "./LibraryPage";
 import { PENDING_PLAYLIST_EVENT, takePendingPlaylist } from "./pending";
 import { SettingsPage } from "./SettingsPage";
 import { summarize, useConnection } from "./status";
@@ -63,7 +64,12 @@ export function App() {
           />
         )}
         {tab === "library" && (
-          <p className="syt-muted">Linked playlists go here.</p>
+          <LibraryPage
+            onOpen={(uri) => {
+              setPlaylistUri(uri);
+              setTab("convert");
+            }}
+          />
         )}
         {tab === "settings" && <SettingsPage connection={connection} />}
       </main>

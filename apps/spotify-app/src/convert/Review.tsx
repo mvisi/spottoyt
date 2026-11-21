@@ -1,9 +1,14 @@
-import type { YoutubeTrack } from "@spottoyt/shared";
+import type {
+  PlaylistLink,
+  PlaylistState,
+  YoutubeTrack,
+} from "@spottoyt/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { helper } from "../helper";
+import { helper, youtubePlaylistUrl } from "../helper";
 import type { Playlist } from "../spotify";
 import { Art, Icon, notify } from "../ui";
 import { FocusView } from "./FocusView";
+import { CreateForm, YoutubeDiffPanel } from "./LinkPanels";
 import { PreviewProvider } from "./Preview";
 import {
   buildRows,
@@ -14,6 +19,8 @@ import {
   nextOpen,
   type Override,
   type Row,
+  type SavedStates,
+  tracksToAdd,
 } from "./reviewState";
 import type { ReviewActions } from "./shared";
 import { TableView } from "./TableView";
@@ -28,28 +35,55 @@ const FILTERS: Array<[Filter, string]> = [
   ["auto", "Auto"],
   ["skipped", "Skipped"],
 ];
+const LINKED_FILTERS: Array<[Filter, string]> = [
+  ["new", "New"],
+  ["review", "Needs review"],
+  ["skipped", "Skipped"],
+  ["added", "On YouTube"],
+  ["all", "All"],
+];
+
+/** Tracks per add request, so progress shows and a failure loses little. */
+const ADD_CHUNK = 50;
 
 export function Review({
   playlist,
+  initial,
   onBack,
 }: {
   playlist: Playlist;
+  /** What the helper has saved for this playlist when the page opened. */
+  initial: PlaylistState;
   onBack: () => void;
 }) {
-  const { matches, progress, run, cancel } = useMatching(playlist.tracks);
+  const [saved, setSaved] = useState<SavedStates>(initial.tracks);
+  const [link, setLink] = useState<PlaylistLink | null>(initial.link);
+  const [creating, setCreating] = useState(false);
+  const [adding, setAdding] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  const [diffVersion, setDiffVersion] = useState(0);
+
+  // Tracks already on YouTube are settled, so only the rest get matched.
+  const toMatch = useMemo(
+    () =>
+      playlist.tracks.filter((t) => initial.tracks[t.uri]?.state !== "added"),
+    [playlist.tracks, initial.tracks],
+  );
+  const { matches, progress, run, cancel } = useMatching(toMatch);
   const [overrides, setOverrides] = useState<ReadonlyMap<string, Override>>(
     new Map(),
   );
   const [layout, setLayout] = useState<Layout>(() =>
     Spicetify.LocalStorage.get(LAYOUT_KEY) === "focus" ? "focus" : "table",
   );
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>(initial.link ? "new" : "all");
   const [selected, setSelected] = useState(0);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
 
   const rows = useMemo(
-    () => buildRows(playlist.tracks, matches, overrides),
-    [playlist.tracks, matches, overrides],
+    () => buildRows(playlist.tracks, matches, overrides, saved),
+    [playlist.tracks, matches, overrides, saved],
   );
   const counts = countRows(rows);
   const list = useMemo(
@@ -84,8 +118,11 @@ export function Review({
     if (next !== -1) setSelected(next);
   };
 
+  const settled = (row: Row) => row.decision?.kind === "added";
+
   const actions: ReviewActions = {
     accept(row, track) {
+      if (settled(row)) return;
       const chosen: YoutubeTrack | undefined =
         track ??
         (row.decision?.kind === "pending" ? row.decision.pick : undefined);
@@ -105,6 +142,7 @@ export function Review({
       advanceFrom(row);
     },
     toggleAccept(row) {
+      if (settled(row)) return;
       const decision = row.decision;
       if (decision?.kind !== "accepted") return actions.accept(row);
       setOverride(row.track.uri, { kind: "pending", pick: decision.track });
@@ -115,17 +153,34 @@ export function Review({
       }
     },
     toggleSkip(row) {
-      if (row.decision?.kind === "skipped") {
-        setOverride(row.track.uri, null);
-        return;
-      }
-      setOverride(row.track.uri, { kind: "skipped" });
-      advanceFrom(row);
+      if (settled(row) || !row.decision) return;
+      const uri = row.track.uri;
+      const skip = row.decision.kind !== "skipped";
+      // Saved right away, so skips survive closing Spotify.
+      setSaved((prev) => {
+        const next = { ...prev };
+        if (skip)
+          next[uri] = { state: "skipped", at: new Date().toISOString() };
+        else delete next[uri];
+        return next;
+      });
+      helper.setSkipped(playlist.uri, uri, skip).catch((e) => {
+        notify(`Couldn't save that skip: ${e.message}`, true);
+        setSaved((prev) => {
+          const next = { ...prev };
+          if (skip) delete next[uri];
+          else next[uri] = { state: "skipped", at: new Date().toISOString() };
+          return next;
+        });
+      });
+      if (skip) advanceFrom(row);
     },
     pick(row, track) {
+      if (settled(row)) return;
       setOverride(row.track.uri, { kind: "pending", pick: track });
     },
     searchAgain(row) {
+      if (settled(row)) return;
       searchAgain([row]);
     },
   };
@@ -194,7 +249,72 @@ export function Review({
   const failedRows = rows.filter(
     (r) => r.match?.status === "error" || !r.match,
   );
-  const decided = counts.accepted + counts.skipped;
+  const decided = counts.added + counts.accepted + counts.skipped;
+  const pendingAdds = tracksToAdd(rows);
+
+  // Adds every accepted track that isn't on YouTube yet, in playlist order.
+  async function addToYoutube() {
+    const items = tracksToAdd(rows);
+    if (!items.length) return;
+    setAdding({ done: 0, total: items.length });
+    let done = 0;
+    try {
+      for (let i = 0; i < items.length; i += ADD_CHUNK) {
+        const res = await helper.addTracks(
+          playlist.uri,
+          items.slice(i, i + ADD_CHUNK),
+        );
+        done += Math.min(ADD_CHUNK, items.length - i);
+        setSaved((prev) => ({ ...prev, ...res.tracks }));
+        setLink(res.link);
+        setAdding({ done, total: items.length });
+      }
+      notify(
+        `Added ${items.length} ${items.length === 1 ? "track" : "tracks"} to YouTube Music`,
+      );
+    } catch (e) {
+      notify(
+        `Adding stopped after ${done} of ${items.length}: ${(e as Error).message}. Try again to add the rest.`,
+        true,
+      );
+    } finally {
+      setAdding(null);
+      setDiffVersion((v) => v + 1);
+    }
+  }
+
+  async function create(title: string) {
+    setCreating(false);
+    try {
+      const created = await helper.linkPlaylist(
+        playlist.uri,
+        playlist.name,
+        title,
+      );
+      setLink(created);
+      setFilter("new");
+      await addToYoutube();
+    } catch (e) {
+      notify(`Couldn't create the playlist: ${(e as Error).message}`, true);
+    }
+  }
+
+  async function unlink() {
+    try {
+      await helper.unlinkPlaylist(playlist.uri);
+      setLink(null);
+      setSaved((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).filter(([, s]) => s.state === "skipped"),
+        ),
+      );
+      setFilter("all");
+      notify("Unlinked. Matching the tracks again to start over.");
+      void run(playlist.tracks);
+    } catch (e) {
+      notify(`Couldn't unlink: ${(e as Error).message}`, true);
+    }
+  }
 
   return (
     <PreviewProvider>
@@ -209,8 +329,13 @@ export function Review({
             <span>
               <b>{counts.total}</b> tracks
             </span>
+            {link && (
+              <span>
+                <b>{counts.added}</b> on YouTube
+              </span>
+            )}
             <span>
-              <b>{counts.accepted}</b> matched
+              <b>{counts.accepted}</b> {link ? "ready to add" : "matched"}
             </span>
             <span>
               <b>{counts.open}</b> to review
@@ -224,8 +349,51 @@ export function Review({
               </span>
             )}
           </div>
+          {link && (
+            <a
+              className="syt-link small"
+              href={youtubePlaylistUrl(link.youtubePlaylistId)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Icon.link /> Linked to “{link.youtubeTitle}” on YouTube Music
+            </a>
+          )}
         </div>
       </div>
+
+      {link && (
+        <YoutubeDiffPanel
+          playlistUri={playlist.uri}
+          version={diffVersion}
+          onUnlink={unlink}
+        />
+      )}
+
+      {adding && (
+        <div className="syt-banner">
+          <div className="syt-progress">
+            <div
+              style={{
+                width: `${(adding.done / Math.max(adding.total, 1)) * 100}%`,
+              }}
+            />
+          </div>
+          <span className="syt-muted">
+            Adding to YouTube Music: {adding.done} of {adding.total}
+          </span>
+        </div>
+      )}
+
+      {creating && (
+        <CreateForm
+          defaultTitle={playlist.name}
+          count={pendingAdds.length}
+          undecided={counts.open + counts.matching}
+          onCreate={create}
+          onCancel={() => setCreating(false)}
+        />
+      )}
 
       {matching && (
         <div className="syt-banner">
@@ -265,14 +433,27 @@ export function Review({
         )}
 
       <div className="syt-bar">
-        <button
-          type="button"
-          className="syt-cta"
-          disabled
-          title="Creating the YouTube Music playlist is the next step being built"
-        >
-          Create on YouTube Music
-        </button>
+        {link ? (
+          <button
+            type="button"
+            className="syt-cta"
+            disabled={!pendingAdds.length || adding !== null}
+            onClick={addToYoutube}
+          >
+            {pendingAdds.length
+              ? `Add ${pendingAdds.length} to YouTube Music`
+              : "Nothing new to add"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="syt-cta"
+            disabled={!pendingAdds.length || creating || adding !== null}
+            onClick={() => setCreating(true)}
+          >
+            Create on YouTube Music
+          </button>
+        )}
         <span className="syt-muted small">
           {decided} of {counts.total} decided
         </span>
@@ -289,7 +470,7 @@ export function Review({
         )}
         {layout === "table" && (
           <div className="syt-seg">
-            {FILTERS.map(([id, label]) => (
+            {(link ? LINKED_FILTERS : FILTERS).map(([id, label]) => (
               <button
                 key={id}
                 type="button"

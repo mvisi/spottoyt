@@ -1,4 +1,6 @@
+import type { PlaylistState } from "@spottoyt/shared";
 import { useEffect, useState } from "react";
+import { helper } from "../helper";
 import { loadPlaylist, type Playlist } from "../spotify";
 import { PlaylistPicker } from "./PlaylistPicker";
 import { Review } from "./Review";
@@ -21,18 +23,30 @@ export function ConvertPage({
 }
 
 function LoadedReview({ uri, onBack }: { uri: string; onBack: () => void }) {
-  const [playlist, setPlaylist] = useState<Playlist | null>(null);
+  const [loaded, setLoaded] = useState<{
+    playlist: Playlist;
+    state: PlaylistState;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadPlaylist(uri).then(setPlaylist, (e) => {
-      console.error("[SpottoYT]", e);
-      setError("Couldn't read that playlist from Spotify.");
-    });
+    Promise.all([
+      loadPlaylist(uri).catch((e) => {
+        console.error("[SpottoYT]", e);
+        throw new Error("Couldn't read that playlist from Spotify.");
+      }),
+      helper.playlistState(uri).catch((e: Error) => {
+        throw new Error(`Couldn't reach the SpottoYT helper: ${e.message}`);
+      }),
+    ]).then(
+      ([playlist, state]) => setLoaded({ playlist, state }),
+      (e: Error) => setError(e.message),
+    );
   }, [uri]);
 
   if (error) return <p className="syt-error">{error}</p>;
-  if (!playlist) return <p className="syt-muted">Reading playlist…</p>;
+  if (!loaded) return <p className="syt-muted">Reading playlist…</p>;
+  const { playlist, state } = loaded;
   if (!playlist.tracks.length) {
     return (
       <p className="syt-muted">
@@ -43,5 +57,5 @@ function LoadedReview({ uri, onBack }: { uri: string; onBack: () => void }) {
       </p>
     );
   }
-  return <Review playlist={playlist} onBack={onBack} />;
+  return <Review playlist={playlist} initial={state} onBack={onBack} />;
 }

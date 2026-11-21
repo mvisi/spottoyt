@@ -60,6 +60,13 @@ export function YoutubeCell({ track }: { track: YoutubeTrack }) {
 /** One line of status for the Match column. */
 export function MatchStatus({ row }: { row: Row }) {
   const { match, decision } = row;
+  if (decision?.kind === "added")
+    return (
+      <span className="syt-dot ok">
+        <i />
+        On YouTube
+      </span>
+    );
   if (!match || !decision)
     return (
       <span className="syt-dot idle syt-pulse">

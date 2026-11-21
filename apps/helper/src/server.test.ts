@@ -3,6 +3,7 @@ import type { YoutubeStatus, YoutubeTrack } from "@spottoyt/shared";
 import { openDatabase } from "./db";
 import { createMatchJobs } from "./matching/jobs";
 import { createMatchStore, type MatchStore } from "./matching/store";
+import { createPlaylistStore } from "./playlists/store";
 import { createHandler } from "./server";
 import { createSettingsStore, defaultSettings } from "./settings";
 import type { SearchOptions, YoutubeClient } from "./youtube";
@@ -27,10 +28,13 @@ let searches: SearchOptions[];
 let statusCalls: Array<{ refresh?: boolean } | undefined>;
 let handle: (req: Request) => Promise<Response>;
 let matches: MatchStore;
+/** The fake YouTube account's playlists, by ID. */
+let ytPlaylists: Map<string, YoutubeTrack[]>;
 
 beforeEach(() => {
   searches = [];
   statusCalls = [];
+  ytPlaylists = new Map();
   const youtube: YoutubeClient = {
     async search(options) {
       searches.push(options);
@@ -43,6 +47,23 @@ beforeEach(() => {
     async video(id) {
       return id === track.videoId ? track : null;
     },
+    async createPlaylist() {
+      const id = `PL${ytPlaylists.size + 1}`;
+      ytPlaylists.set(id, []);
+      return id;
+    },
+    async addToPlaylist(id, videoIds) {
+      const items = ytPlaylists.get(id);
+      if (!items) throw new Error("Playlist not found");
+      for (const videoId of videoIds) {
+        if (!items.some((i) => i.videoId === videoId)) {
+          items.push({ ...track, videoId });
+        }
+      }
+    },
+    async playlistTracks(id) {
+      return ytPlaylists.get(id) ?? null;
+    },
   };
   const db = openDatabase(":memory:");
   matches = createMatchStore(db);
@@ -51,6 +72,7 @@ beforeEach(() => {
     settings: createSettingsStore(db),
     youtube,
     matches,
+    playlists: createPlaylistStore(db),
     // Matching itself is tested in matching/; here a match is instant.
     jobs: createMatchJobs(async (spotify) => ({
       spotifyUri: spotify.uri,
@@ -234,5 +256,96 @@ describe("manual matches", () => {
       JSON.stringify({ spotifyUri: "x", track: { videoId: "y" } }),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe("linked playlists", () => {
+  const playlist = encodeURIComponent("spotify:playlist:abc");
+  const add = (...items: Array<[string, string]>) =>
+    send(
+      "POST",
+      `/playlists/${playlist}/tracks`,
+      JSON.stringify({
+        tracks: items.map(([spotifyUri, videoId]) => ({
+          spotifyUri,
+          track: { ...track, videoId },
+        })),
+      }),
+    );
+  const link = () =>
+    send(
+      "POST",
+      `/playlists/${playlist}/link`,
+      JSON.stringify({ spotifyName: "Drive", title: "Drive (from Spotify)" }),
+    );
+
+  test("creates a link, adds tracks once, and lists it", async () => {
+    expect((await add(["spotify:track:1", "v1"])).status).toBe(404);
+
+    const created = await link();
+    expect(created.status).toBe(201);
+    expect((await link()).status).toBe(409);
+
+    await add(["spotify:track:1", "v1"], ["spotify:track:2", "v2"]);
+    const again = await add(["spotify:track:1", "v1"]);
+    expect(Object.keys((await again.json()).tracks)).toEqual([]);
+    expect(ytPlaylists.get("PL1")?.map((t) => t.videoId)).toEqual(["v1", "v2"]);
+
+    const links = await (await get("/playlists")).json();
+    expect(links).toMatchObject([
+      { spotifyName: "Drive", youtubePlaylistId: "PL1", added: 2, skipped: 0 },
+    ]);
+  });
+
+  test("keeps skips per playlist, without overriding added tracks", async () => {
+    await send("PUT", `/playlists/${playlist}/skips/spotify%3Atrack%3A9`);
+    let state = await (await get(`/playlists/${playlist}`)).json();
+    expect(state.link).toBe(null);
+    expect(state.tracks["spotify:track:9"].state).toBe("skipped");
+
+    await link();
+    await add(["spotify:track:1", "v1"]);
+    await send("PUT", `/playlists/${playlist}/skips/spotify%3Atrack%3A1`);
+    await send("DELETE", `/playlists/${playlist}/skips/spotify%3Atrack%3A9`);
+    state = await (await get(`/playlists/${playlist}`)).json();
+    expect(state.tracks["spotify:track:1"].state).toBe("added");
+    expect(state.tracks["spotify:track:9"]).toBeUndefined();
+  });
+
+  test("reports what differs on YouTube, without changing anything", async () => {
+    await link();
+    await add(["spotify:track:1", "v1"], ["spotify:track:2", "v2"]);
+    const items = ytPlaylists.get("PL1") ?? [];
+    // You removed v2 and added your own song on YouTube.
+    ytPlaylists.set("PL1", [
+      ...items.filter((t) => t.videoId !== "v2"),
+      { ...track, videoId: "mine" },
+    ]);
+
+    const diff = await (await get(`/playlists/${playlist}/youtube`)).json();
+    expect(diff.onlyOnYoutube.map((t: YoutubeTrack) => t.videoId)).toEqual([
+      "mine",
+    ]);
+    expect(diff.removedOnYoutube).toEqual(["spotify:track:2"]);
+
+    // Removed tracks count as added, so syncing doesn't bring them back.
+    await add(["spotify:track:2", "v2"]);
+    expect(ytPlaylists.get("PL1")?.map((t) => t.videoId)).toEqual([
+      "v1",
+      "mine",
+    ]);
+  });
+
+  test("unlinking forgets added tracks and says when the playlist is gone", async () => {
+    await link();
+    await add(["spotify:track:1", "v1"]);
+    ytPlaylists.delete("PL1");
+    expect((await get(`/playlists/${playlist}/youtube`)).status).toBe(410);
+
+    expect((await send("DELETE", `/playlists/${playlist}/link`)).status).toBe(
+      204,
+    );
+    const state = await (await get(`/playlists/${playlist}`)).json();
+    expect(state).toEqual({ link: null, tracks: {} });
   });
 });

@@ -59,12 +59,30 @@ export const Icon = {
   search: () => svg(["M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z", "m21 21-4.3-4.3"]),
   retry: () => svg(["M21 12a9 9 0 1 1-3-6.7L21 8", "M21 3v5h-5"]),
   close: () => svg(["M18 6 6 18", "m6 6 12 12"]),
+  link: () =>
+    svg([
+      "M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7",
+      "M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7",
+    ]),
 };
 
 export function formatDuration(ms?: number) {
   if (!ms) return "–";
   const s = Math.round(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** "just now", "5 min ago", "3 days ago", or a date past a month. */
+export function formatAgo(iso?: string) {
+  if (!iso) return "never";
+  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
+  const ago = (n: number, unit: string) =>
+    `${Math.floor(n)} ${unit}${Math.floor(n) === 1 ? "" : "s"} ago`;
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return ago(seconds / 3600, "hour");
+  if (seconds < 30 * 86400) return ago(seconds / 86400, "day");
+  return new Date(iso).toLocaleDateString();
 }
 
 export function notify(message: string, isError = false) {

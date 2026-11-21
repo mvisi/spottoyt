@@ -55,8 +55,9 @@ export function TableView({
       {rows.map((row, i) => {
         const { track, match, decision } = row;
         const open = expanded.has(track.uri);
+        const settled = decision?.kind === "added";
         const shown =
-          decision?.kind === "accepted"
+          decision?.kind === "accepted" || decision?.kind === "added"
             ? decision.track
             : decision?.kind === "pending"
               ? decision.pick
@@ -78,7 +79,9 @@ export function TableView({
                 sub={track.artists.join(", ")}
                 image={track.image}
               />
-              {!match ? (
+              {shown && settled ? (
+                <YoutubeCell track={shown} />
+              ) : !match ? (
                 <span className="syt-none">Searching…</span>
               ) : decision?.kind === "skipped" ? (
                 <span className="syt-none">Won't be added</span>
@@ -103,7 +106,7 @@ export function TableView({
                     <Icon.retry />
                   </button>
                 )}
-                {match && (
+                {match && !settled && (
                   <button
                     type="button"
                     className="syt-ic"
@@ -118,10 +121,12 @@ export function TableView({
                 )}
                 <button
                   type="button"
-                  className={`syt-ic${decision?.kind === "accepted" ? " on-ok" : ""}`}
-                  title="Accept (a)"
+                  className={`syt-ic${decision?.kind === "accepted" || settled ? " on-ok" : ""}`}
+                  title={settled ? "Already on YouTube Music" : "Accept (a)"}
                   disabled={
-                    !decision || (decision.kind === "pending" && !decision.pick)
+                    !decision ||
+                    settled ||
+                    (decision.kind === "pending" && !decision.pick)
                   }
                   onClick={(e) => {
                     e.stopPropagation();
@@ -134,7 +139,7 @@ export function TableView({
                   type="button"
                   className={`syt-ic${decision?.kind === "skipped" ? " on-skip" : ""}`}
                   title="Skip (s)"
-                  disabled={!decision}
+                  disabled={!decision || settled}
                   onClick={(e) => {
                     e.stopPropagation();
                     actions.toggleSkip(row);
@@ -144,7 +149,7 @@ export function TableView({
                 </button>
               </div>
             </div>
-            {open && match && (
+            {open && match && !settled && (
               <div className="syt-alts">
                 {match.candidates.map((c, k) => (
                   <CandidateLine

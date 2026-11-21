@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { helper } from "../helper";
 import { loadPlaylists, type PlaylistSummary } from "../spotify";
 import { Art } from "../ui";
 
@@ -6,8 +7,13 @@ export function PlaylistPicker({ onPick }: { onPick: (uri: string) => void }) {
   const [playlists, setPlaylists] = useState<PlaylistSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [linked, setLinked] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
+    helper.playlists().then(
+      (links) => setLinked(new Set(links.map((l) => l.spotifyUri))),
+      () => {},
+    );
     loadPlaylists().then(setPlaylists, (e) => {
       console.error("[SpottoYT]", e);
       setError("Couldn't read your playlists from Spotify.");
@@ -46,7 +52,10 @@ export function PlaylistPicker({ onPick }: { onPick: (uri: string) => void }) {
             onClick={() => onPick(p.uri)}
           >
             <Art src={p.image} />
-            <div className="syt-tile-name">{p.name}</div>
+            <div className="syt-tile-name">
+              {p.name}
+              {linked.has(p.uri) && <span className="syt-tag">Linked</span>}
+            </div>
             <div className="syt-tile-sub">
               {[
                 p.owner,

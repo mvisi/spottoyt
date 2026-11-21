@@ -662,3 +662,67 @@ button.syt-dot:hover {
   font-size: 11px;
   color: var(--syt-sub);
 }
+
+/* ---------- Linked playlists ---------- */
+.syt .syt-link.small {
+  font-size: 12px;
+}
+.syt .syt-ghost.small {
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.syt-create {
+  flex-wrap: wrap;
+}
+.syt-create-field {
+  display: grid;
+  gap: 4px;
+  min-width: 260px;
+}
+.syt-diff {
+  margin-bottom: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--syt-card);
+  font-size: 13px;
+}
+.syt-diff .syt-alts {
+  padding: 8px 0 4px;
+}
+.syt-diff p {
+  margin: 6px 0 0;
+}
+.syt .syt-diff-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--syt-text);
+  text-align: left;
+}
+.syt .syt-cand-main.static {
+  display: block;
+  padding: 6px 10px;
+}
+.syt-cand > .syt-ghost.small {
+  margin-right: 4px;
+}
+.syt-lib {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.syt-lib-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--syt-card);
+}
+.syt-lib-row .syt-acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

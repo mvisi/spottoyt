@@ -7,6 +7,7 @@ import { describeError, log, logToFile } from "./log";
 import { createMatchJobs } from "./matching/jobs";
 import { matchTrack } from "./matching/match";
 import { createMatchStore } from "./matching/store";
+import { createPlaylistStore } from "./playlists/store";
 import { createHandler } from "./server";
 import { createSettingsStore } from "./settings";
 import { createYoutubeClient } from "./youtube";
@@ -42,6 +43,7 @@ const server = Bun.serve({
     youtube,
     jobs,
     matches,
+    playlists: createPlaylistStore(db),
   }),
 });
 

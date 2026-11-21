@@ -1,11 +1,15 @@
 import {
+  type AddTracksResponse,
   DEFAULT_HELPER_URL,
   type ErrorResponse,
   type HealthResponse,
   type MatchJob,
+  type PlaylistLink,
+  type PlaylistState,
   type SearchResponse,
   type Settings,
   type SpotifyTrack,
+  type YoutubeDiff,
   type YoutubeStatus,
   type YoutubeTrack,
   type YoutubeTrackKind,
@@ -28,6 +32,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
+
+const enc = encodeURIComponent;
 
 const body = (value: unknown, method = "POST"): RequestInit => ({
   method,
@@ -63,6 +69,32 @@ export const helper = {
     request<void>(`/manual-matches?${new URLSearchParams({ spotifyUri })}`, {
       method: "DELETE",
     }),
+
+  // Linked playlists. Adding is the only change ever made on YouTube.
+  playlists: () => request<PlaylistLink[]>("/playlists"),
+  playlistState: (uri: string) =>
+    request<PlaylistState>(`/playlists/${enc(uri)}`),
+  linkPlaylist: (uri: string, spotifyName: string, title: string) =>
+    request<PlaylistLink>(
+      `/playlists/${enc(uri)}/link`,
+      body({ spotifyName, title }),
+    ),
+  unlinkPlaylist: (uri: string) =>
+    request<void>(`/playlists/${enc(uri)}/link`, { method: "DELETE" }),
+  addTracks: (
+    uri: string,
+    tracks: Array<{ spotifyUri: string; track: YoutubeTrack }>,
+  ) =>
+    request<AddTracksResponse>(
+      `/playlists/${enc(uri)}/tracks`,
+      body({ tracks }),
+    ),
+  setSkipped: (uri: string, trackUri: string, skipped: boolean) =>
+    request<void>(`/playlists/${enc(uri)}/skips/${enc(trackUri)}`, {
+      method: skipped ? "PUT" : "DELETE",
+    }),
+  youtubeDiff: (uri: string) =>
+    request<YoutubeDiff>(`/playlists/${enc(uri)}/youtube`),
 };
 
 /** Video ID from a YouTube or YouTube Music link, or a bare ID. */
@@ -87,3 +119,6 @@ export function parseVideoId(input: string): string | null {
 
 export const youtubeMusicUrl = (videoId: string) =>
   `https://music.youtube.com/watch?v=${videoId}`;
+
+export const youtubePlaylistUrl = (playlistId: string) =>
+  `https://music.youtube.com/playlist?list=${playlistId}`;

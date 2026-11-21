@@ -46,6 +46,12 @@ bun run vpn   # same as: wireproxy -s -c ~/.config/spottoyt/wireproxy.conf
 
 Then set `HTTPS_PROXY=http://127.0.0.1:25345` in `.env`. The helper and `setup:youtube` pick it up.
 
+## Syncing
+
+Creating a playlist on YouTube Music links it to the Spotify one. The Library tab lists linked playlists and how many new Spotify tracks each has. Opening one shows only what's new, and **Add to YouTube Music** appends the accepted tracks.
+
+Syncing only ever adds. Nothing is removed from the YouTube playlist, and the Spotify playlist is never changed. Songs you added on YouTube yourself are listed as "only on YouTube Music" so you can add them to Spotify by hand, and tracks you removed on YouTube aren't added back.
+
 ## Development
 
 ```bash

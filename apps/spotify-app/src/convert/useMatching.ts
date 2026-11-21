@@ -42,7 +42,10 @@ export function useMatching(tracks: SpotifyTrack[]) {
   const run = useCallback(
     async (subset: SpotifyTrack[], fresh = false) => {
       stopJob();
-      if (!subset.length) return;
+      if (!subset.length) {
+        setProgress({ status: "done", done: 0, total: 0 });
+        return;
+      }
       const token = {};
       runRef.current = token;
       setProgress({ status: "starting", done: 0, total: subset.length });

@@ -8,6 +8,7 @@ import {
   filterRows,
   nextOpen,
   type Override,
+  tracksToAdd,
 } from "./reviewState";
 
 const candidate = (videoId: string, score = 95): MatchCandidate => ({
@@ -68,7 +69,16 @@ describe("decide", () => {
   });
 
   test("your change wins over the match", () => {
-    expect(decide(matched, { kind: "skipped" })).toEqual({ kind: "skipped" });
+    expect(
+      decide(matched, undefined, { state: "skipped", at: "2026-11-21" }),
+    ).toEqual({ kind: "skipped" });
+    expect(
+      decide(
+        matched,
+        { kind: "accepted", track: candidate("x") },
+        { state: "added", track: candidate("y"), at: "2026-11-21" },
+      ),
+    ).toEqual({ kind: "added", track: candidate("y") });
     expect(
       decide(review, { kind: "accepted", track: candidate("x") }),
     ).toMatchObject({
@@ -95,6 +105,7 @@ describe("rows", () => {
     expect(countRows(rows)).toEqual({
       total: 4,
       accepted: 1,
+      added: 0,
       skipped: 0,
       open: 2,
       matching: 1,
@@ -122,5 +133,29 @@ describe("rows", () => {
     expect(nextOpen(rows, -1)).toBe(1);
     expect(nextOpen(rows, 1)).toBe(2);
     expect(nextOpen(rows, 2)).toBe(-1);
+  });
+
+  test("tracks already on YouTube are settled and not added again", () => {
+    const overrides = new Map<string, Override>([
+      ["spotify:track:2", { kind: "accepted", track: candidate("c") }],
+    ]);
+    const rows = buildRows(tracks, matches, overrides, {
+      "spotify:track:1": { state: "added", track: candidate("a"), at: "x" },
+      "spotify:track:3": { state: "skipped", at: "x" },
+    });
+
+    expect(tracksToAdd(rows).map((t) => t.spotifyUri)).toEqual([
+      "spotify:track:2",
+    ]);
+    expect(filterRows(rows, "new").map((r) => r.track.uri)).toEqual([
+      "spotify:track:2",
+      "spotify:track:3",
+      "spotify:track:4",
+    ]);
+    expect(countRows(rows)).toMatchObject({
+      added: 1,
+      accepted: 1,
+      skipped: 1,
+    });
   });
 });

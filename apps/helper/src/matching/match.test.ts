@@ -67,6 +67,10 @@ describe("planSearches", () => {
   });
 });
 
+const unused = async (): Promise<never> => {
+  throw new Error("unused");
+};
+
 describe("matchTrack", () => {
   let store: MatchStore;
   let searches: SearchOptions[];
@@ -83,6 +87,9 @@ describe("matchTrack", () => {
     async video() {
       throw new Error("unused");
     },
+    createPlaylist: unused,
+    addToPlaylist: unused,
+    playlistTracks: unused,
   };
   const deps = () => ({
     youtube,

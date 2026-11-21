@@ -23,6 +23,24 @@ const migrations: string[] = [
    );`,
   // The Spotify side of each cached search, for analyzing matches later.
   "ALTER TABLE track_candidates ADD COLUMN spotify_track TEXT;",
+  // Spotify playlists with a YouTube Music copy, and per playlist, which
+  // tracks were added there or skipped. Skips can exist before a link does.
+  `CREATE TABLE playlist_links (
+     spotify_uri TEXT PRIMARY KEY,
+     spotify_name TEXT NOT NULL,
+     youtube_playlist_id TEXT NOT NULL,
+     youtube_title TEXT NOT NULL,
+     created_at TEXT NOT NULL,
+     synced_at TEXT
+   );
+   CREATE TABLE playlist_tracks (
+     playlist_uri TEXT NOT NULL,
+     track_uri TEXT NOT NULL,
+     state TEXT NOT NULL CHECK (state IN ('added', 'skipped')),
+     track TEXT,
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY (playlist_uri, track_uri)
+   );`,
 ];
 
 export type Db = Database;
