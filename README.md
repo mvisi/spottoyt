@@ -41,7 +41,7 @@ BindAddress = 127.0.0.1:25345
 ```
 
 ```bash
-wireproxy -c ~/.config/spottoyt/wireproxy.conf
+bun run vpn   # same as: wireproxy -s -c ~/.config/spottoyt/wireproxy.conf
 ```
 
 Then set `HTTPS_PROXY=http://127.0.0.1:25345` in `.env`. The helper and `setup:youtube` pick it up.
@@ -49,7 +49,7 @@ Then set `HTTPS_PROXY=http://127.0.0.1:25345` in `.env`. The helper and `setup:y
 ## Development
 
 ```bash
-bun run dev            # helper on :4317, plus a watch build copied into Spicetify
+bun run dev            # wireproxy, helper on :4317, plus a watch build copied into Spicetify
 spicetify watch -a     # in another terminal: reloads Spotify when the app changes
 ```
 
