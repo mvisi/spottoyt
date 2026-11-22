@@ -16,6 +16,7 @@ Convert Spotify playlists into YouTube Music playlists, reviewed from inside Spo
 ```bash
 bun install
 bun run link-spotify   # builds, installs into Spicetify, and runs spicetify apply
+bun run install-cli    # puts the `spottoyt` command in ~/.bun/bin
 ```
 
 Spotify restarts and **SpottoYT** shows up in the sidebar. You can also right-click a playlist and pick **Convert with SpottoYT**.
@@ -23,7 +24,7 @@ Spotify restarts and **SpottoYT** shows up in the sidebar. You can also right-cl
 ### YouTube Music sign-in
 
 ```bash
-bun run setup:youtube
+spottoyt setup-youtube
 ```
 
 It asks for your YouTube Music cookie (open music.youtube.com signed in, DevTools → Network, any `youtubei` request, copy the `cookie` request header), checks that it signs in, and saves it to `~/.config/spottoyt/youtube-cookie`. Run it again whenever the cookie expires.
@@ -44,7 +45,20 @@ BindAddress = 127.0.0.1:25345
 bun run vpn   # same as: wireproxy -s -c ~/.config/spottoyt/wireproxy.conf
 ```
 
-Then set `HTTPS_PROXY=http://127.0.0.1:25345` in `.env`. The helper and `setup:youtube` pick it up.
+Then set `HTTPS_PROXY=http://127.0.0.1:25345` in `.env`. The helper and `spottoyt setup-youtube` pick it up.
+
+## Running it
+
+```bash
+spottoyt start               # VPN tunnel and helper in this terminal, Ctrl+C stops both
+spottoyt start --background  # keeps running after you close the terminal
+spottoyt status              # pid, uptime, VPN and YouTube sign-in
+spottoyt stop                # stops the helper, however it was started
+spottoyt logs                # follow helper.log
+spottoyt update              # git pull, bun install, rebuild and reinstall into Spotify
+```
+
+`start` refuses to run when a helper is already up, including one from `bun run dev`. The command always runs this checkout, so don't move the repo without running `bun run install-cli` again.
 
 ## Syncing
 
@@ -55,9 +69,10 @@ Syncing only ever adds. Nothing is removed from the YouTube playlist, and the Sp
 ## Moving to another machine
 
 ```bash
-bun run backup                 # spottoyt-backup-<date>.zip in the current folder
-bun run backup out.zip --no-secrets   # leave out the cookie and VPN configs
-bun run restore spottoyt-backup-<date>.zip   # on the new machine, with the helper stopped
+spottoyt backup                      # spottoyt-backup-<date>.zip in the current folder
+spottoyt backup ~/backups            # or a folder, or a full path to a .zip
+spottoyt backup out.zip --no-secrets # leave out the cookie and VPN configs
+spottoyt restore spottoyt-backup-<date>.zip   # on the new machine, after spottoyt stop
 ```
 
 The backup holds the database (matches, your picks, linked playlists) and `~/.config/spottoyt` (YouTube cookie, wireproxy and WireGuard configs). With those included the zip is a secret, so don't share it. Restore keeps any files it replaces as `*.before-restore-<time>`, and fixes paths in `wireproxy.conf` if your home folder changed.

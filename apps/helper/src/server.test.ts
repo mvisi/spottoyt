@@ -107,7 +107,12 @@ describe("basics", () => {
   test("reports health with CORS headers", async () => {
     const res = await get("/health");
 
-    expect(await res.json()).toEqual({ ok: true, version: "1.2.3" });
+    expect(await res.json()).toEqual({
+      ok: true,
+      version: "1.2.3",
+      pid: process.pid,
+      uptime: expect.any(Number),
+    });
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(res.headers.get("Cache-Control")).toBe("no-store");
   });

@@ -179,7 +179,12 @@ export function createHandler(deps: Deps) {
 
   const routes: Route[] = [
     route("GET", "/health", () =>
-      json<HealthResponse>({ ok: true, version: deps.version }),
+      json<HealthResponse>({
+        ok: true,
+        version: deps.version,
+        pid: process.pid,
+        uptime: Math.round(process.uptime()),
+      }),
     ),
 
     route("GET", "/youtube/status", async (_req, url) =>

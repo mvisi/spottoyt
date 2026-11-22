@@ -6,6 +6,10 @@ export const DEFAULT_HELPER_URL = `http://127.0.0.1:${DEFAULT_HELPER_PORT}`;
 export type HealthResponse = {
   ok: true;
   version: string;
+  /** The helper's process id, so `spottoyt stop` can find it. */
+  pid: number;
+  /** Seconds since the helper started. */
+  uptime: number;
 };
 
 export type ErrorResponse = {

@@ -1,7 +1,7 @@
 // Backs up everything SpottoYT keeps outside the repo into one zip, for
-// moving to another machine. Restore it there with `bun run restore`.
+// moving to another machine. Restore it there with `spottoyt restore`.
 //
-//   bun run backup [out.zip] [--no-secrets]
+//   spottoyt backup [out.zip or folder] [--no-secrets]
 //
 // The zip holds the database (matches, manual picks, linked playlists) and,
 // unless --no-secrets, ~/.config/spottoyt: the YouTube cookie and the
@@ -24,9 +24,13 @@ import { config } from "../apps/helper/src/config";
 const args = Bun.argv.slice(2);
 const withSecrets = !args.includes("--no-secrets");
 const date = new Date().toISOString().slice(0, 10);
-const out = resolve(
-  args.find((a) => !a.startsWith("--")) ?? `spottoyt-backup-${date}.zip`,
-);
+const defaultName = `spottoyt-backup-${date}.zip`;
+// The path can be a zip file or a folder to put it in.
+const target = resolve(args.find((a) => !a.startsWith("--")) ?? defaultName);
+const out =
+  existsSync(target) && statSync(target).isDirectory()
+    ? join(target, defaultName)
+    : target;
 
 const dbPath = join(config.dataDir, "spottoyt.db");
 if (!existsSync(dbPath)) {

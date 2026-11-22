@@ -1,6 +1,6 @@
 // Restores a zip made by `bun run backup`, e.g. on a new machine.
 //
-//   bun run restore <backup.zip>
+//   spottoyt restore <backup.zip>
 //
 // Files it replaces are kept next to the originals with a
 // `.before-restore-<time>` suffix, so nothing is lost.
@@ -30,7 +30,7 @@ type Manifest = {
 
 const zipArg = Bun.argv[2];
 if (!zipArg || !existsSync(zipArg)) {
-  console.error("Usage: bun run restore <backup.zip>");
+  console.error("Usage: spottoyt restore <backup.zip>");
   process.exit(1);
 }
 
@@ -42,7 +42,9 @@ const running = await fetch(`http://127.0.0.1:${config.port}/health`, {
   () => false,
 );
 if (running) {
-  console.error("The helper is running. Stop it (bun run dev) and try again.");
+  console.error(
+    "The helper is running. Stop it (spottoyt stop) and try again.",
+  );
   process.exit(1);
 }
 
@@ -110,7 +112,7 @@ try {
   console.log("  - install Bun, Spicetify and wireproxy");
   console.log("  - bun install && bun run link-spotify");
   console.log("  - put HTTPS_PROXY=http://127.0.0.1:25345 in .env");
-  console.log("  - bun run dev");
+  console.log("  - spottoyt start");
 } catch (error) {
   console.error((error as Error).message);
   process.exitCode = 1;
